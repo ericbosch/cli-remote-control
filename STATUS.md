@@ -1,6 +1,6 @@
 # Status
 
-**Banner:** 🟡 Yellow — Dev-token auth fixed; continue to next phases
+**Banner:** 🟡 Yellow — Preflight OK; diagnostics (v5) in progress; engines incomplete
 
 **Current milestone:** M1 — Core Remote Terminal (PTY) + Android Native App
 
