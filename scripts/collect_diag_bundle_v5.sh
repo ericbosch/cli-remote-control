@@ -193,6 +193,14 @@ write_summary() {
   auth_code="$(cat "${CMD_DIR}/curl_auth_sessions.http" 2>/dev/null || echo "000")"
   healthz_code="$(cat "${CMD_DIR}/curl_healthz.http" 2>/dev/null || echo "000")"
 
+  local git_dirty_count git_worktree_clean
+  git_dirty_count="$(git status --porcelain=v1 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${git_dirty_count}" == "0" ]]; then
+    git_worktree_clean="PASS"
+  else
+    git_worktree_clean="FAIL"
+  fi
+
   local host_listen="FAIL"
   if ss -lnt 2>/dev/null | rg -q '127\.0\.0\.1:8787\b'; then
     host_listen="PASS"
@@ -283,6 +291,11 @@ PY
     printf 'codex_schema_present=%s\n' "${codex_schema}"
     printf 'cursor_fixture_present=%s\n' "${cursor_fixture}"
     printf 'e2e_session_event=%s\n' "${e2e}"
+    printf 'git_worktree_clean=%s\n' "${git_worktree_clean}"
+    if [[ "${git_worktree_clean}" == "FAIL" ]]; then
+      printf 'git_dirty_item_count=%s\n' "${git_dirty_count}"
+      printf 'git_dirty_evidence_files=cmd/git_status_porcelain.txt cmd/git_diff_name_only.txt cmd/git_diff_stat.txt\n'
+    fi
   } > "${out_path}"
 }
 
@@ -293,7 +306,7 @@ write_report_md() {
 
   local head sha status
   sha="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
-  status="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  status="$(git status --porcelain=v1 2>/dev/null | wc -l | tr -d ' ')"
   if [[ "${status}" == "0" ]]; then
     head="clean"
   else
@@ -349,7 +362,7 @@ write_staff_summary_md() {
 
   local head sha status
   sha="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
-  status="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  status="$(git status --porcelain=v1 2>/dev/null | wc -l | tr -d ' ')"
   if [[ "${status}" == "0" ]]; then
     head="clean"
   else
@@ -441,6 +454,10 @@ zip_bundle() {
 
 main() {
   echo "Writing bundle: ${OUT_DIR}/ and ${ZIP_PATH}"
+
+  capture_cmd "git_status_porcelain.txt" git status --porcelain=v1
+  capture_cmd "git_diff_name_only.txt" git diff --name-only
+  capture_cmd "git_diff_stat.txt" git diff --stat
 
   maybe_start_host_bg
 
