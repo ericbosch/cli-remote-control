@@ -85,7 +85,7 @@ fun SessionsScreen(
                     load()
                     scope.launch {
                         try {
-                            val s = Api.createSession()
+                            val s = Api.createCursorSession()
                             sessions = Api.listSessions()
                             onAttach(s.id)
                         } catch (e: Exception) {
@@ -96,9 +96,7 @@ fun SessionsScreen(
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("New session")
-            }
+            ) { Text("New Cursor session") }
             Spacer(modifier = Modifier.height(16.dp))
             if (loading && sessions.isEmpty()) {
                 Column(

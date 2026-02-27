@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
-  createSession,
+  createCursorSession,
   listSessions,
   terminateSession,
   getToken,
@@ -29,6 +29,9 @@ export default function App() {
   const [token, setTokenState] = useState(getToken())
   const [baseUrl, setBaseUrlState] = useState(getBaseUrl())
   const [showSettings, setShowSettings] = useState(!getToken())
+  const [workspacePath, setWorkspacePath] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [mode, setMode] = useState<'structured' | 'pty'>('pty')
 
   const loadSessions = useCallback(async () => {
     if (!getToken()) return
@@ -52,7 +55,11 @@ export default function App() {
   const handleCreate = async () => {
     setError(null)
     try {
-      const s = await createSession('shell')
+      const s = await createCursorSession({
+        workspacePath,
+        prompt,
+        mode,
+      })
       setSessions((prev) => [...prev, s])
       setAttachedId(s.id)
     } catch (e) {
@@ -89,7 +96,7 @@ export default function App() {
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrlState(e.target.value)}
-              placeholder="http://127.0.0.1:8765"
+              placeholder="http://127.0.0.1:8787"
             />
           </label>
           <label>
@@ -125,8 +132,35 @@ export default function App() {
           <div className="sessions-header">
             <h2>Sessions</h2>
             <button type="button" onClick={handleCreate} disabled={loading}>
-              New session
+              New Cursor session
             </button>
+          </div>
+          <div className="cursor-create">
+            <label>
+              Workspace path
+              <input
+                type="text"
+                value={workspacePath}
+                onChange={(e) => setWorkspacePath(e.target.value)}
+                placeholder="/home/you/project"
+              />
+            </label>
+            <label>
+              Initial prompt (optional)
+              <input
+                type="text"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="e.g. set up tests for auth module"
+              />
+            </label>
+            <label>
+              Mode
+              <select value={mode} onChange={(e) => setMode(e.target.value as 'structured' | 'pty')}>
+                <option value="pty">PTY (terminal)</option>
+                <option value="structured">Structured (experimental)</option>
+              </select>
+            </label>
           </div>
           {loading && sessions.length === 0 ? (
             <p>Loading…</p>

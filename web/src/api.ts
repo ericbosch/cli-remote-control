@@ -43,11 +43,26 @@ export async function listSessions(): Promise<SessionInfo[]> {
   return r.json()
 }
 
-export async function createSession(engine = 'shell', name?: string): Promise<SessionInfo> {
+export interface CreateCursorSessionBody {
+  workspacePath: string
+  prompt: string
+  mode: 'structured' | 'pty'
+  name?: string
+}
+
+export async function createCursorSession(body: CreateCursorSessionBody): Promise<SessionInfo> {
+  const payload = {
+    engine: 'cursor',
+    workspacePath: body.workspacePath,
+    prompt: body.prompt,
+    mode: body.mode,
+    name: body.name,
+    args: {},
+  }
   const r = await fetch(`${getBaseUrl()}/api/sessions`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ engine, name, args: {} }),
+    body: JSON.stringify(payload),
   })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json()

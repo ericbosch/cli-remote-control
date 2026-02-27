@@ -45,10 +45,12 @@ object Api {
         parseSessionList(body)
     }
 
-    suspend fun createSession(engine: String = "shell", name: String? = null): SessionInfo = withContext(Dispatchers.IO) {
+    suspend fun createCursorSession(workspacePath: String? = null, prompt: String? = null, mode: String = "pty"): SessionInfo = withContext(Dispatchers.IO) {
         val json = JSONObject().apply {
-            put("engine", engine)
-            name?.let { put("name", it) }
+            put("engine", "cursor")
+            workspacePath?.let { put("workspacePath", it) }
+            prompt?.let { put("prompt", it) }
+            put("mode", mode)
             put("args", JSONObject())
         }
         val req = Request.Builder()

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -35,8 +36,23 @@ type Session struct {
 	cancel    context.CancelFunc
 }
 
-// NewSession creates a session. Caller must call Run().
+// NewSession creates a session for the given engine. Caller must call Run().
 func NewSession(ctx context.Context, id, name, engine string, args map[string]interface{}, logDir string, bufKB int) (*Session, error) {
+	switch engine {
+	case "cursor":
+		s, err := newCursorSession(ctx, id, name, args, logDir, bufKB)
+		if err != nil {
+			log.Printf("cursor engine unavailable (%v); falling back to shell PTY mock", err)
+			return newShellSession(ctx, id, name, "cursor-mock", logDir, bufKB)
+		}
+		return s, nil
+	default:
+		return newShellSession(ctx, id, name, engine, logDir, bufKB)
+	}
+}
+
+// newShellSession starts a bash shell in a PTY.
+func newShellSession(ctx context.Context, id, name, engine, logDir string, bufKB int) (*Session, error) {
 	if bufKB <= 0 {
 		bufKB = defaultBufKB
 	}
@@ -62,8 +78,6 @@ func NewSession(ctx context.Context, id, name, engine string, args map[string]in
 		return nil, err
 	}
 	s.logFile = lf
-
-	// M1: only shell engine — spawn bash in PTY
 	cmd := exec.CommandContext(ctx, "bash")
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	ptmx, err := pty.Start(cmd)
@@ -71,6 +85,64 @@ func NewSession(ctx context.Context, id, name, engine string, args map[string]in
 		lf.Close()
 		cancel()
 		return nil, err
+	}
+	s.ptmx = ptmx
+	s.cmd = cmd
+
+	go s.copyOutput(lf)
+	return s, nil
+}
+
+// newCursorSession starts the Cursor CLI agent in a PTY.
+// It uses the official "agent" entrypoint and relies on browser-based login.
+// If the agent binary is missing or fails to start, this returns an error so the caller can fall back.
+func newCursorSession(ctx context.Context, id, name string, args map[string]interface{}, logDir string, bufKB int) (*Session, error) {
+	if bufKB <= 0 {
+		bufKB = defaultBufKB
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	s := &Session{
+		ID:      id,
+		Name:    name,
+		Engine:  "cursor",
+		Created: time.Now(),
+		state:   "running",
+		ring:    NewRingBuffer(bufKB * 1024),
+		subs:    make(map[chan []byte]struct{}),
+		cancel:  cancel,
+	}
+	if err := os.MkdirAll(logDir, 0750); err != nil {
+		cancel()
+		return nil, err
+	}
+	logPath := filepath.Join(logDir, id+".log")
+	lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	s.logFile = lf
+
+	workspacePath, _ := args["workspacePath"].(string)
+	prompt, _ := args["prompt"].(string)
+
+	cmdArgs := []string{}
+	if prompt != "" {
+		cmdArgs = append(cmdArgs, "-p", prompt)
+	}
+
+	cmd := exec.CommandContext(ctx, "agent", cmdArgs...)
+	if workspacePath != "" {
+		cmd.Dir = workspacePath
+	}
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		lf.Close()
+		cancel()
+		// Wrap error to signal cursor unavailability; caller will fall back.
+		return nil, errors.New("failed to start cursor agent; ensure Cursor IDE is installed and logged in")
 	}
 	s.ptmx = ptmx
 	s.cmd = cmd

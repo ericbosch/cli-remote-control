@@ -94,18 +94,36 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Engine string                 `json:"engine"`
-		Name   string                 `json:"name"`
-		Args   map[string]interface{} `json:"args"`
+		Engine        string                 `json:"engine"`
+		Name          string                 `json:"name"`
+		WorkspacePath string                 `json:"workspacePath"`
+		Prompt        string                 `json:"prompt"`
+		Mode          string                 `json:"mode"`
+		Args          map[string]interface{} `json:"args"`
 	}
 	if err := jsonDecode(r, &body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	if body.Engine == "" {
-		body.Engine = "shell"
+		body.Engine = "cursor"
 	}
-	sess, err := s.manager.Create(r.Context(), body.Engine, body.Name, body.Args)
+
+	args := map[string]interface{}{}
+	for k, v := range body.Args {
+		args[k] = v
+	}
+	if body.WorkspacePath != "" {
+		args["workspacePath"] = body.WorkspacePath
+	}
+	if body.Prompt != "" {
+		args["prompt"] = body.Prompt
+	}
+	if body.Mode != "" {
+		args["mode"] = body.Mode
+	}
+
+	sess, err := s.manager.Create(r.Context(), body.Engine, body.Name, args)
 	if err != nil {
 		log.Printf("create session: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
