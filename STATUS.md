@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 3 complete (canonical WS replay + e2e); Phase 4 next (Codex app-server engine)
+**Banner:** 🟡 Yellow — Phase 4 complete (Codex app-server engine); Phase 5 next (Cursor NDJSON engine + dedupe)
 
-**Current milestone:** Phase 3 — WS replay + session metadata
+**Current milestone:** Phase 4 — Codex engine (app-server stdio)
 
 ## Checklist
 

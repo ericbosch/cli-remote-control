@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/ericbosch/cli-remote-control/host/internal/codexrpc"
 	"github.com/ericbosch/cli-remote-control/host/internal/events"
 )
 
@@ -39,11 +41,16 @@ type Session struct {
 	closed      bool
 	cancel      context.CancelFunc
 	done        chan struct{}
+
+	codex         *codexrpc.Client
+	codexThreadID string
 }
 
 // NewSession creates a session for the given engine. Caller must call Run().
 func NewSession(ctx context.Context, id, name, engine string, args map[string]interface{}, logDir string, eventsDir string, bufKB int) (*Session, error) {
 	switch engine {
+	case "codex":
+		return newCodexSession(ctx, id, name, args, logDir, eventsDir, bufKB)
 	case "cursor":
 		s, err := newCursorSession(ctx, id, name, args, logDir, eventsDir, bufKB)
 		if err != nil {
@@ -264,11 +271,34 @@ func (s *Session) Run() {
 // WriteInput sends input to the PTY.
 func (s *Session) WriteInput(data []byte) error {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.closed || s.ptmx == nil {
+	codex := s.codex
+	threadID := s.codexThreadID
+	closed := s.closed
+	ptmx := s.ptmx
+	s.mu.RUnlock()
+
+	if closed {
 		return io.ErrClosedPipe
 	}
-	_, err := s.ptmx.Write(data)
+	if codex != nil {
+		text := string(data)
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil
+		}
+		if threadID == "" {
+			return errors.New("codex thread not initialized")
+		}
+		if err := s.codexStartTurn(text); err != nil {
+			return err
+		}
+		_, _ = s.PublishEvent(events.EventKindUser, map[string]any{"data": text})
+		return nil
+	}
+	if ptmx == nil {
+		return io.ErrClosedPipe
+	}
+	_, err := ptmx.Write(data)
 	if err == nil {
 		_, _ = s.PublishEvent(events.EventKindUser, map[string]any{"data": string(data)})
 	}
