@@ -27,9 +27,11 @@ func New(cfg Config) (*Server, error) {
 }
 
 func (s *Server) routes() {
-	api := s.authMiddleware(http.HandlerFunc(s.handleAPI))
+	s.mux.HandleFunc("/healthz", s.handleHealthz)
+
+	api := s.authMiddleware(false, http.HandlerFunc(s.handleAPI))
 	s.mux.Handle("/api/", api)
-	s.mux.Handle("/ws/", s.authMiddleware(http.HandlerFunc(s.handleWS)))
+	s.mux.Handle("/ws/", s.authMiddleware(true, http.HandlerFunc(s.handleWS)))
 	if s.cfg.WebDir != "" {
 		s.mux.Handle("/", http.FileServer(http.Dir(s.cfg.WebDir)))
 	} else {
@@ -44,17 +46,32 @@ func (s *Server) routes() {
 	}
 }
 
-func (s *Server) authMiddleware(next http.Handler) http.Handler {
+func (s *Server) authMiddleware(allowQueryToken bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
-		if token == "" {
-			token = r.URL.Query().Get("token")
+		if strings.TrimSpace(s.cfg.Token) == "" {
+			http.Error(w, "server misconfigured", http.StatusInternalServerError)
+			return
 		}
-		if token != "Bearer "+s.cfg.Token && token != s.cfg.Token {
+
+		token := strings.TrimSpace(r.Header.Get("Authorization"))
+		if token == "" && allowQueryToken {
+			token = strings.TrimSpace(r.URL.Query().Get("token"))
+		}
+		if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+			token = strings.TrimSpace(token[len("bearer "):])
+		}
+		if token != s.cfg.Token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	jsonEncoder(w).Encode(map[string]interface{}{
+		"ok": true,
 	})
 }
 

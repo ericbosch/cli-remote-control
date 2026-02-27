@@ -1,6 +1,6 @@
 # Status
 
-**Banner:** 🔴 Red — Auth blocked (dev token returns 401); fixing now
+**Banner:** 🟡 Yellow — Dev-token auth fixed; continue to next phases
 
 **Current milestone:** M1 — Core Remote Terminal (PTY) + Android Native App
 
@@ -35,7 +35,7 @@
 
 ## Manual test steps (M1)
 
-1. Start host: `cd host && go run ./cmd/rc-host serve --generate-dev-token`; copy token from log.
+1. Start host: `cd host && go run ./cmd/rc-host serve --generate-dev-token`; read token from `host/.dev-token`.
 2. Open web: `cd web && npm run dev`; in UI set token, create session, attach, type `echo hello`, see output.
 3. Resize terminal; disconnect and reattach; see replay then live output.
 4. Terminate session from UI; verify session removed.
