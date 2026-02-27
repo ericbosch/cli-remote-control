@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🔴 Red — Codex sandbox blocks host bind; v5 cannot reach 127.0.0.1:8787
+**Banner:** 🟡 Yellow — Phase 2 complete (canonical events + persistence); Phase 3 next (WS replay + API contract)
 
-**Current milestone:** M1 — Core Remote Terminal (PTY) + Android Native App
+**Current milestone:** Phase 2 — Canonical event model + replay contract
 
 ## Checklist
 

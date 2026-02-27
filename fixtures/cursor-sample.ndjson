@@ -1,0 +1,3 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"\nOK"}]},"session_id":"sess-fixture-1","timestamp_ms":1700000000003}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"\nOK"}]},"session_id":"sess-fixture-1"}
+

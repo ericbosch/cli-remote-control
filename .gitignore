@@ -5,6 +5,7 @@ host/rc-host
 host/host/
 host/.run/
 *.log
+logs/
 
 # Web
 web/dist/
