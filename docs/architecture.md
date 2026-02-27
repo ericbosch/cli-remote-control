@@ -19,7 +19,9 @@ Endpoint:
 Auth:
 
 - `/ws/*` requires the Bearer token.
-- For browser compatibility, `/ws/*` also accepts `?token=...` (local-only; do not expose the host publicly).
+- Browsers should **not** put the Bearer token in the WebSocket URL. Instead:
+  - `POST /api/ws-ticket` (Authorization: `Bearer <token>`) returns `{ticket, expires_ms}`
+  - Connect WS using `?ticket=...` (short-lived, single-use)
 
 Replay controls (query params):
 
@@ -33,4 +35,3 @@ Wire format:
 - Client → server: legacy control messages are accepted for input/resize:
   - `{"type":"input","data":"..."}`
   - `{"type":"resize","cols":<int>,"rows":<int>}`
-

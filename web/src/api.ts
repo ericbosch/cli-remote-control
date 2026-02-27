@@ -78,11 +78,21 @@ export async function terminateSession(id: string): Promise<void> {
   if (!r.ok && r.status !== 404) throw new Error(`HTTP ${r.status}`)
 }
 
-export function wsEventsUrl(sessionId: string, params?: Record<string, string>): string {
+export async function issueWSTicket(): Promise<string> {
+  const r = await fetch(`${getBaseUrl()}/api/ws-ticket`, {
+    method: 'POST',
+    headers: headers(),
+  })
+  if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)
+  const obj = (await r.json()) as { ticket?: string }
+  if (!obj || typeof obj.ticket !== 'string' || !obj.ticket) throw new Error('Missing ws ticket')
+  return obj.ticket
+}
+
+export function wsEventsUrl(sessionId: string, ticket: string, params?: Record<string, string>): string {
   const base = getBaseUrl().replace(/^http/, 'ws')
-  const t = getToken()
   const url = new URL(`${base}/ws/events/${sessionId}`)
-  if (t) url.searchParams.set('token', t)
+  url.searchParams.set('ticket', ticket)
   if (params) {
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
   }

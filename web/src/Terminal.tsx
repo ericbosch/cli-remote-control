@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { wsEventsUrl, type SessionInfo } from './api'
+import { issueWSTicket, wsEventsUrl, type SessionInfo } from './api'
 
 const WS_RECONNECT_DELAYS = [500, 1000, 2000, 5000]
 const LAST_SEQ_KEY_PREFIX = 'rc-last-seq:'
@@ -40,7 +40,10 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
   const xtermRef = useRef<XTerm | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const shouldReconnectRef = useRef(true)
+  const connectNonceRef = useRef(0)
   const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'closed'>('connecting')
+  const closedRef = useRef(false)
   const reconnectAttempt = useRef(0)
   const [lastSeq, setLastSeq] = useState<number>(() => {
     const v = localStorage.getItem(`${LAST_SEQ_KEY_PREFIX}${sessionId}`)
@@ -66,6 +69,10 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
     lastSeqRef.current = lastSeq
   }, [lastSeq])
 
+  useEffect(() => {
+    closedRef.current = status === 'closed'
+  }, [status])
+
   const sendInput = useCallback(
     (text: string) => {
       const ws = wsRef.current
@@ -81,113 +88,125 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
     term.write(line.replaceAll('\n', '\r\n'))
   }, [])
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
+    const myNonce = ++connectNonceRef.current
+    setStatus(reconnectAttempt.current > 0 ? 'reconnecting' : 'connecting')
     const from = lastSeqRef.current > 0 ? String(lastSeqRef.current + 1) : ''
-    const url = wsEventsUrl(
-      sessionId,
-      from ? { from_seq: from } : { last_n: '256' },
-    )
-    const ws = new WebSocket(url)
-    wsRef.current = ws
+    try {
+      const ticket = await issueWSTicket()
+      if (!shouldReconnectRef.current || myNonce !== connectNonceRef.current) return
+      const url = wsEventsUrl(sessionId, ticket, from ? { from_seq: from } : { last_n: '256' })
+      const ws = new WebSocket(url)
+      wsRef.current = ws
 
-    ws.onopen = () => {
-      setStatus('connected')
-      reconnectAttempt.current = 0
+      ws.onopen = () => {
+        setStatus('connected')
+        reconnectAttempt.current = 0
 
-      const term = xtermRef.current
-      const fit = fitRef.current
-      if (term && fit) {
-        fit.fit()
-        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
-      }
-    }
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data as string) as SessionEvent
-        if (!msg || typeof msg.kind !== 'string' || typeof msg.seq !== 'number') return
-
-        if (msg.seq > lastSeqRef.current) {
-          lastSeqRef.current = msg.seq
-          setLastSeq(msg.seq)
-          localStorage.setItem(`${LAST_SEQ_KEY_PREFIX}${sessionId}`, String(msg.seq))
+        const term = xtermRef.current
+        const fit = fitRef.current
+        if (term && fit) {
+          fit.fit()
+          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
         }
-
-        switch (msg.kind) {
-          case 'assistant': {
-            const payload = msg.payload || {}
-            const txt = safeText(payload.data)
-            if (txt) writeLine(txt)
-            return
-          }
-          case 'user': {
-            const payload = msg.payload || {}
-            const txt = safeText(payload.data)
-            if (txt) writeLine(`\r\n[you ${formatTS(msg.ts_ms)}] ${txt}\r\n`)
-            return
-          }
-          case 'thinking_delta': {
-            const payload = msg.payload || {}
-            const delta = safeText(payload.delta)
-            if (delta) {
-              thinkingRef.current += delta
-              setThinkingText(thinkingRef.current)
-            }
-            return
-          }
-          case 'thinking_done': {
-            const done = thinkingRef.current
-            if (done) setThinkingHistory((prev) => [...prev, done])
-            thinkingRef.current = ''
-            setThinkingText('')
-            return
-          }
-          case 'tool_call': {
-            setToolCalls((prev) => [...prev, { ts: msg.ts_ms, seq: msg.seq, payload: msg.payload }])
-            return
-          }
-          case 'tool_output': {
-            setToolOutputs((prev) => [...prev, { ts: msg.ts_ms, seq: msg.seq, payload: msg.payload }])
-            return
-          }
-          case 'error': {
-            const payload = msg.payload || {}
-            const m = safeText(payload.message) || safeText(payload.data)
-            if (m) writeLine(`\r\n[error ${formatTS(msg.ts_ms)}] ${m}\r\n`)
-            return
-          }
-          case 'status': {
-            const payload = msg.payload || {}
-            const state = safeText(payload.state)
-            const code = typeof payload.exit_code === 'number' ? payload.exit_code : undefined
-            if (state) writeLine(`\r\n[status ${formatTS(msg.ts_ms)}] ${state}${code != null ? ` (exit ${code})` : ''}\r\n`)
-            if (state === 'exited') {
-              setStatus('closed')
-              ws.close()
-            }
-            return
-          }
-        }
-      } catch {
-        // ignore parse errors
       }
-    }
 
-    ws.onclose = () => {
-      wsRef.current = null
-      if (status !== 'closed') {
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data as string) as SessionEvent
+          if (!msg || typeof msg.kind !== 'string' || typeof msg.seq !== 'number') return
+
+          if (msg.seq > lastSeqRef.current) {
+            lastSeqRef.current = msg.seq
+            setLastSeq(msg.seq)
+            localStorage.setItem(`${LAST_SEQ_KEY_PREFIX}${sessionId}`, String(msg.seq))
+          }
+
+          switch (msg.kind) {
+            case 'assistant': {
+              const payload = msg.payload || {}
+              const txt = safeText(payload.data)
+              if (txt) writeLine(txt)
+              return
+            }
+            case 'user': {
+              const payload = msg.payload || {}
+              const txt = safeText(payload.data)
+              if (txt) writeLine(`\r\n[you ${formatTS(msg.ts_ms)}] ${txt}\r\n`)
+              return
+            }
+            case 'thinking_delta': {
+              const payload = msg.payload || {}
+              const delta = safeText(payload.delta)
+              if (delta) {
+                thinkingRef.current += delta
+                setThinkingText(thinkingRef.current)
+              }
+              return
+            }
+            case 'thinking_done': {
+              const done = thinkingRef.current
+              if (done) setThinkingHistory((prev) => [...prev, done])
+              thinkingRef.current = ''
+              setThinkingText('')
+              return
+            }
+            case 'tool_call': {
+              setToolCalls((prev) => [...prev, { ts: msg.ts_ms, seq: msg.seq, payload: msg.payload }])
+              return
+            }
+            case 'tool_output': {
+              setToolOutputs((prev) => [...prev, { ts: msg.ts_ms, seq: msg.seq, payload: msg.payload }])
+              return
+            }
+            case 'error': {
+              const payload = msg.payload || {}
+              const m = safeText(payload.message) || safeText(payload.data)
+              if (m) writeLine(`\r\n[error ${formatTS(msg.ts_ms)}] ${m}\r\n`)
+              return
+            }
+            case 'status': {
+              const payload = msg.payload || {}
+              const state = safeText(payload.state)
+              const code = typeof payload.exit_code === 'number' ? payload.exit_code : undefined
+              if (state) writeLine(`\r\n[status ${formatTS(msg.ts_ms)}] ${state}${code != null ? ` (exit ${code})` : ''}\r\n`)
+              if (state === 'exited') {
+                setStatus('closed')
+                ws.close()
+              }
+              return
+            }
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+
+      ws.onclose = () => {
+        wsRef.current = null
+        if (!shouldReconnectRef.current) return
+        if (closedRef.current) return
         const delay = WS_RECONNECT_DELAYS[Math.min(reconnectAttempt.current, WS_RECONNECT_DELAYS.length - 1)]
         setStatus('reconnecting')
         reconnectAttempt.current += 1
-        setTimeout(() => connect(), delay)
+        setTimeout(() => void connect(), delay)
       }
-    }
 
-    ws.onerror = () => {}
-  }, [sessionId, status, writeLine])
+      ws.onerror = () => {}
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to connect'
+      writeLine(`\r\n[error ${formatTS(Date.now())}] ${msg}\r\n`)
+      if (!shouldReconnectRef.current || closedRef.current) return
+      const delay = WS_RECONNECT_DELAYS[Math.min(reconnectAttempt.current, WS_RECONNECT_DELAYS.length - 1)]
+      setStatus('reconnecting')
+      reconnectAttempt.current += 1
+      setTimeout(() => void connect(), delay)
+    }
+  }, [sessionId, writeLine])
 
   useEffect(() => {
     if (!containerRef.current) return
+    shouldReconnectRef.current = true
     const term = new XTerm({
       cursorBlink: true,
       theme: { background: '#1a1a2e', foreground: '#eee' },
@@ -207,6 +226,7 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
     connect()
 
     return () => {
+      shouldReconnectRef.current = false
       window.removeEventListener('resize', onResize)
       wsRef.current?.close()
       wsRef.current = null

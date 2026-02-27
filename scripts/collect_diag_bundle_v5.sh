@@ -37,7 +37,9 @@ redact_stream() {
   perl -pe '
     s/(Authorization:\s*Bearer)\s+[^\s"]+/$1 REDACTED/gmi;
     s/([?&]token=)[^&\s"]+/$1REDACTED/gmi;
+    s/([?&]ticket=)[^&\s"]+/$1REDACTED/gmi;
     s/("?(access_token|refresh_token)"?\s*:\s*")[^"]+/$1REDACTED/gmi;
+    s/("?(ws_)?ticket"?\s*:\s*")[^"]+/$1REDACTED/gmi;
     s/("?[A-Za-z0-9_]*API_KEY"?\s*[:=]\s*")[^"]+/$1REDACTED/gmi;
     s/\b([A-Za-z0-9_]*API_KEY)=\S+/$1=REDACTED/gm;
   '
@@ -193,6 +195,13 @@ write_summary() {
   auth_code="$(cat "${CMD_DIR}/curl_auth_sessions.http" 2>/dev/null || echo "000")"
   healthz_code="$(cat "${CMD_DIR}/curl_healthz.http" 2>/dev/null || echo "000")"
 
+  local ws_auth_mode="bearer_header"
+  local ws_ticket_code
+  ws_ticket_code="$(cat "${CMD_DIR}/curl_ws_ticket.http" 2>/dev/null || echo "")"
+  if [[ "${ws_ticket_code}" == "200" ]]; then
+    ws_auth_mode="ticket"
+  fi
+
   local git_dirty_count git_worktree_clean
   git_dirty_count="$(git status --porcelain=v1 2>/dev/null | wc -l | tr -d ' ')"
   if [[ "${git_dirty_count}" == "0" ]]; then
@@ -291,6 +300,7 @@ PY
     printf 'codex_schema_present=%s\n' "${codex_schema}"
     printf 'cursor_fixture_present=%s\n' "${cursor_fixture}"
     printf 'e2e_session_event=%s\n' "${e2e}"
+    printf 'ws_auth_mode=%s\n' "${ws_auth_mode}"
     printf 'git_worktree_clean=%s\n' "${git_worktree_clean}"
     if [[ "${git_worktree_clean}" == "FAIL" ]]; then
       printf 'git_dirty_item_count=%s\n' "${git_dirty_count}"
@@ -474,6 +484,20 @@ main() {
 
   auth_curl_to_file "${BASE_URL}/api/sessions" "${CMD_DIR}/curl_auth_sessions.json" "${CMD_DIR}/curl_auth_sessions.http"
 
+  # WS auth: prefer short-lived ticket for browser compatibility (no Bearer token in WS URL).
+  if [[ -f "${TOKEN_FILE}" ]]; then
+    token="$(tr -d '\r\n' < "${TOKEN_FILE}")"
+    curl -sS -o "${CMD_DIR}/curl_ws_ticket.json" -w '%{http_code}\n' -K - <<EOF 2>/dev/null | tr -d '\r\n' > "${CMD_DIR}/curl_ws_ticket.http" || true
+url = "${BASE_URL}/api/ws-ticket"
+header = "Authorization: Bearer ${token}"
+request = "POST"
+EOF
+    if [[ -f "${CMD_DIR}/curl_ws_ticket.json" ]]; then
+      redact_stream < "${CMD_DIR}/curl_ws_ticket.json" > "${CMD_DIR}/curl_ws_ticket.json.redacted" || true
+      mv -f "${CMD_DIR}/curl_ws_ticket.json.redacted" "${CMD_DIR}/curl_ws_ticket.json" || true
+    fi
+  fi
+
   # Code pointers (snippets/greps)
   capture_shell "snippet_server_go.txt" "nl -ba host/internal/server/server.go | sed -n '1,260p'"
   capture_shell "snippet_main_go.txt" "nl -ba host/cmd/rc-host/main.go | sed -n '1,220p'"
@@ -558,6 +582,17 @@ const tokenFile = process.argv[2];
 const sessionId = process.argv[3];
 const token = fs.readFileSync(tokenFile, 'utf8').trim();
 
+async function issueTicket() {
+  const resp = await fetch('http://127.0.0.1:8787/api/ws-ticket', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) throw new Error(`ws-ticket http=${resp.status}`);
+  const obj = await resp.json();
+  if (!obj || !obj.ticket) throw new Error('ws-ticket missing ticket');
+  return String(obj.ticket);
+}
+
 function wsConnect(url) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
@@ -585,7 +620,8 @@ function wsWaitForEvent(ws, predicate, timeoutMs) {
 
 (async () => {
   const marker = `DIAG_E2E_${Date.now()}`;
-  const url1 = `ws://127.0.0.1:8787/ws/events/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(token)}&last_n=0`;
+  const ticket1 = await issueTicket();
+  const url1 = `ws://127.0.0.1:8787/ws/events/${encodeURIComponent(sessionId)}?ticket=${encodeURIComponent(ticket1)}&last_n=0`;
   const ws1 = await wsConnect(url1);
 
   const attached = await wsWaitForEvent(ws1, (e) => e && e.kind === 'status', 4000);
@@ -596,7 +632,8 @@ function wsWaitForEvent(ws, predicate, timeoutMs) {
   try { ws1.close(); } catch {}
 
   const fromSeq = seenSeq > 0 ? (seenSeq - 1) : 0;
-  const url2 = `ws://127.0.0.1:8787/ws/events/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(token)}&from_seq=${encodeURIComponent(String(fromSeq))}`;
+  const ticket2 = await issueTicket();
+  const url2 = `ws://127.0.0.1:8787/ws/events/${encodeURIComponent(sessionId)}?ticket=${encodeURIComponent(ticket2)}&from_seq=${encodeURIComponent(String(fromSeq))}`;
   const ws2 = await wsConnect(url2);
   const replay = await wsWaitForEvent(ws2, (e) => e && e.kind === 'assistant' && e.payload && typeof e.payload.data === 'string' && e.payload.data.includes(marker), 5000);
   try { ws2.close(); } catch {}

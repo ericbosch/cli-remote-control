@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ericbosch/cli-remote-control/host/internal/session"
 )
@@ -15,6 +16,7 @@ import (
 type Server struct {
 	cfg     Config
 	manager *session.Manager
+	tickets *wsTicketManager
 	mux     *http.ServeMux
 }
 
@@ -22,7 +24,7 @@ type Server struct {
 func New(cfg Config) (*Server, error) {
 	mgr := session.NewManager(cfg.LogDir, 64, filepath.Join(".run", "sessions"))
 	mux := http.NewServeMux()
-	s := &Server{cfg: cfg, manager: mgr, mux: mux}
+	s := &Server{cfg: cfg, manager: mgr, tickets: newWSTicketManager(), mux: mux}
 	s.routes()
 	return s, nil
 }
@@ -32,8 +34,8 @@ func (s *Server) routes() {
 
 	api := s.authMiddleware(false, http.HandlerFunc(s.handleAPI))
 	s.mux.Handle("/api/", api)
-	s.mux.Handle("/ws/events/", s.authMiddleware(true, http.HandlerFunc(s.handleWSEvents)))
-	s.mux.Handle("/ws/", s.authMiddleware(true, http.HandlerFunc(s.handleWS)))
+	s.mux.Handle("/ws/events/", s.wsAuthMiddleware(http.HandlerFunc(s.handleWSEvents)))
+	s.mux.Handle("/ws/", s.wsAuthMiddleware(http.HandlerFunc(s.handleWS)))
 	if s.cfg.WebDir != "" {
 		s.mux.Handle("/", http.FileServer(http.Dir(s.cfg.WebDir)))
 	} else {
@@ -70,6 +72,35 @@ func (s *Server) authMiddleware(allowQueryToken bool, next http.Handler) http.Ha
 	})
 }
 
+func (s *Server) wsAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Prefer Authorization header (non-browser clients). Browsers should use a short-lived ticket.
+		token := strings.TrimSpace(r.Header.Get("Authorization"))
+		if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+			token = strings.TrimSpace(token[len("bearer "):])
+		}
+		if token != "" {
+			if token != s.cfg.Token {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		ticket := strings.TrimSpace(r.URL.Query().Get("ticket"))
+		if ticket == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !s.tickets.Consume(ticket, time.Now()) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jsonEncoder(w).Encode(map[string]interface{}{
@@ -80,6 +111,8 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
+	case path == "/api/ws-ticket" && r.Method == http.MethodPost:
+		s.issueWSTicket(w, r)
 	case path == "/api/sessions" && r.Method == http.MethodGet:
 		s.listSessions(w, r)
 	case path == "/api/sessions" && r.Method == http.MethodPost:

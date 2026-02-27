@@ -22,6 +22,7 @@ v5 redacts (best-effort) from all captured outputs:
 
 - `Authorization: Bearer ...`
 - `?token=...`
+- `?ticket=...`
 - `access_token` / `refresh_token`
 - `*_API_KEY` values
 
@@ -37,4 +38,3 @@ It never prints raw auth tokens. Token diagnostics record only:
 2. Run: `./scripts/collect_diag_bundle_v5.sh`
 
 If the host is not running, the bundle still gets created, but host-related checks will be FAIL/SKIP in `SUMMARY.txt`.
-

@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 7 implemented (Android WebView wrapper + Gradle wrapper); build verification SKIP (Android SDK not present)
+**Banner:** 🟡 Yellow — Phase 5.5 complete (WS ticket auth for browser WebSockets); Phase 6 in progress (UI polish + phone workflow)
 
-**Current milestone:** Phase 5 — Cursor/agent engine (NDJSON + PTY fallback)
+**Current milestone:** Phase 6 — Web UI “remote control” experience
 
 ## Checklist
 
@@ -44,4 +44,4 @@
 ## Known issues
 
 - `cd web && npm audit` reports a moderate `esbuild` advisory via `vite`; fix requires a breaking Vite major upgrade.
-- `cd android && ./gradlew assembleDebug` requires a local Android SDK (`ANDROID_HOME` or `android/local.properties`).
+- `cd android && ./gradlew assembleDebug` requires a local Android SDK (`ANDROID_HOME` or `android/local.properties`). When present, the debug APK builds successfully.
