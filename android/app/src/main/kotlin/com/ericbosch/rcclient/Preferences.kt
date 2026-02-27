@@ -19,7 +19,7 @@ object Preferences {
         return ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    fun getBaseUrl(): String = prefs().getString(KEY_BASE_URL, "http://10.0.2.2:8765") ?: "http://10.0.2.2:8765"
+    fun getBaseUrl(): String = prefs().getString(KEY_BASE_URL, "http://10.0.2.2:8787") ?: "http://10.0.2.2:8787"
 
     fun setBaseUrl(url: String) {
         prefs().edit().putString(KEY_BASE_URL, url).apply()

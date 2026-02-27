@@ -35,7 +35,7 @@ To serve the built web app from the host:
 ./host/rc-host serve --web-dir=web/dist
 ```
 
-Then open http://127.0.0.1:8765 and enter the token in Settings.
+Then open http://127.0.0.1:8787 and enter the token in Settings.
 
 ## Dev (host + web)
 
@@ -47,8 +47,8 @@ Starts the host and Vite dev server. Use the web UI at the Vite URL (e.g. http:/
 
 ## Android
 
-1. Set **Server URL** in the app to your PC’s address (e.g. `http://192.168.1.100:8765`).  
-   For emulator use `http://10.0.2.2:8765`.
+1. Set **Server URL** in the app to your PC’s address (e.g. `http://192.168.1.100:8787`).  
+   For emulator use `http://10.0.2.2:8787`.
 2. Set **Auth token** to the same token used by the host.
 3. Create a session and tap **Attach** to open the terminal in the WebView.
 

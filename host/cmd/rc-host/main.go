@@ -21,7 +21,7 @@ func main() {
 		RunE:  runServe,
 	}
 	serveCmd.Flags().String("bind", "127.0.0.1", "Bind address (use 0.0.0.0 to expose; triggers security warning)")
-	serveCmd.Flags().String("port", "8765", "Port")
+	serveCmd.Flags().String("port", "8787", "Port")
 	serveCmd.Flags().String("token", "", "Bearer token for API/WS auth (overrides env RC_TOKEN)")
 	serveCmd.Flags().String("log-dir", "logs", "Directory for session logs (rotated)")
 	serveCmd.Flags().Bool("generate-dev-token", false, "Generate and write dev token to .dev-token if no token set")
@@ -55,6 +55,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	if token == "" {
 		log.Fatal("No auth token set. Use --token, RC_TOKEN, or --generate-dev-token.")
+	}
+
+	// Policy: do not use CURSOR_API_KEY (subscription login only).
+	if os.Getenv("CURSOR_API_KEY") != "" {
+		log.Printf("Warning: CURSOR_API_KEY is set but API keys are disabled by policy; ignoring it.")
+		os.Unsetenv("CURSOR_API_KEY")
 	}
 
 	if bind == "0.0.0.0" {

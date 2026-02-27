@@ -10,6 +10,7 @@ These must hold for all deployments. Code and config must enforce them.
 | **Logs MUST be local-only and append-only** | Logs written only to host filesystem; no log shipping by default; append-only files, rotation by size/time. |
 | **Public bind MUST require explicit flag and loud warning** | If bind address is 0.0.0.0, startup log and optionally stderr must print a clear security warning. |
 | **Never store provider API keys outside the host machine** | No API keys in Android app, relay, or web client; CLIs use host env/config only. |
+| **Do not use CURSOR_API_KEY** | If CURSOR_API_KEY is set in the environment, the host logs a warning and unsets it before spawning engines; Cursor auth relies on the official browser/IDE login flow only. |
 | **Relay (if added) MUST NOT see plaintext** | M3 relay only routes encrypted blobs; no session content or tokens in relay. |
 | **No reverse engineering of closed products** | Use only official CLIs and official APIs (e.g. Ollama HTTP API). |
 | **CORS locked down** | Web served by host = same origin; otherwise allowlist only; no wildcard for credentialed requests. |

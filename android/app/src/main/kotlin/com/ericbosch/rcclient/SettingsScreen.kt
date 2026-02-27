@@ -39,7 +39,7 @@ fun SettingsScreen(onSaved: () -> Unit) {
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("http://192.168.1.100:8765") },
+                placeholder = { Text("http://192.168.1.100:8787") },
                 singleLine = true
             )
             Spacer(modifier = Modifier.height(16.dp))

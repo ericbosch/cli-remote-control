@@ -10,7 +10,7 @@ Remote control for your PC: run and attach to terminal sessions (shell and, in M
    cd host && go run ./cmd/rc-host serve --generate-dev-token
    ```
    Copy the printed token.
-3. **Web UI:** Open http://127.0.0.1:8765 (or run `cd web && npm run dev` and use the Vite URL). Enter the token in Settings, create a session, attach.
+3. **Web UI:** Open http://127.0.0.1:8787 (or run `cd web && npm run dev` and use the Vite URL). Enter the token in Settings, create a session, attach.
 4. **Android:** Install the app, set Server URL (e.g. `http://YOUR_PC_IP:8765`) and token in Settings, then list/create sessions and attach.
 
 ## Repo layout

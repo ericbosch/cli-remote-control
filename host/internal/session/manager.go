@@ -5,14 +5,13 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 // Manager creates and tracks sessions.
 type Manager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
-	nextID   atomic.Uint64
+	counter  atomic.Uint64
 	logDir   string
 	bufKB    int
 }
@@ -78,7 +77,7 @@ func (m *Manager) Terminate(id string) error {
 }
 
 func (m *Manager) nextID() uint64 {
-	return m.nextID.Add(1)
+	return m.counter.Add(1)
 }
 
 func idString(n uint64) string {
