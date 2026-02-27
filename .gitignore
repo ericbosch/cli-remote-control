@@ -1,6 +1,8 @@
 # Host
 host/.dev-token
 host/logs/
+host/rc-host
+host/host/
 *.log
 
 # Web
@@ -27,3 +29,7 @@ android/local.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Diagnostics bundles
+diag_*/
+diag_*.zip

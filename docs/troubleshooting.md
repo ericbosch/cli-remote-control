@@ -1,5 +1,14 @@
 # Troubleshooting
 
+## Diagnostics
+
+- Generate an audit bundle: `./scripts/collect_diag_bundle_v5.sh`
+  - Output: `diag_YYYYMMDD_HHMMSS/` and `diag_YYYYMMDD_HHMMSS.zip` in repo root.
+  - Start with `diag_.../SUMMARY.txt` for GO/NO-GO and PASS/FAIL/SKIP.
+- Safe auth debug (does not print the token):
+  - Unauth sessions should be `401`: `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/sessions`
+  - Health should be `200`: `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/healthz`
+
 ## Host won’t start
 
 - **“No auth token set”** — Pass `--token=YOUR_TOKEN`, set `RC_TOKEN`, or use `--generate-dev-token`.
@@ -9,12 +18,12 @@
 ## Web / Android: “Unauthorized” or 401
 
 - Ensure the **token** in Settings matches the host’s token (Bearer prefix optional).
-- Ensure **base URL** points to the host (e.g. `http://127.0.0.1:8765` for local, or your PC’s IP and port when using the phone).
+- Ensure **base URL** points to the host (e.g. `http://127.0.0.1:8787` for local, or your PC’s IP and port when using the phone).
 
 ## Android: can’t connect to host
 
-- **Emulator:** Use base URL `http://10.0.2.2:8765` (emulator’s alias to host’s loopback).
-- **Physical device:** Use your PC’s LAN IP (e.g. `http://192.168.1.100:8765`). Host must be started with `--bind=0.0.0.0`.
+- **Emulator:** Use base URL `http://10.0.2.2:8787` (emulator’s alias to host’s loopback).
+- **Physical device:** Use your PC’s LAN IP (e.g. `http://192.168.1.100:8787`). Host must be started with `--bind=0.0.0.0`.
 - **Cleartext:** The app has `android:usesCleartextTraffic="true"` for HTTP. For HTTPS use a proper URL.
 
 ## Terminal: no output or duplicate output

@@ -123,10 +123,17 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		log.Fatal("No auth token set. Use --token/RC_TOKEN, --token-file/RC_TOKEN_FILE, or --generate-dev-token.")
 	}
 
-	// Policy: do not use CURSOR_API_KEY (subscription login only).
-	if os.Getenv("CURSOR_API_KEY") != "" {
-		log.Printf("Warning: CURSOR_API_KEY is set but API keys are disabled by policy; ignoring it.")
-		os.Unsetenv("CURSOR_API_KEY")
+	// Policy: no API-key based auth for engines (subscription login only; never PAYG keys).
+	// If any *_API_KEY variables are present, explicitly log that they are ignored and unset them.
+	for _, kv := range os.Environ() {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if strings.HasSuffix(k, "_API_KEY") && os.Getenv(k) != "" {
+			log.Printf("Warning: %s is set but ignored by policy; ignoring it.", k)
+			os.Unsetenv(k)
+		}
 	}
 
 	if bind == "0.0.0.0" {
