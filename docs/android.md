@@ -26,11 +26,20 @@ If the Android SDK is not installed/configured, Gradle will fail with an error a
 
 - Install the debug APK from `android/app/build/outputs/apk/debug/`.
 - Open the app, set:
-  - Base URL: `http://<host>:8787` (host must be reachable from the phone)
+  - Base URL:
+    - Recommended (host serves UI): `http://127.0.0.1:8787` when using SSH port-forwarding from the phone.
+    - LAN (only if you intentionally expose it): `http://<LAN_IP>:8787`
   - Token: the host Bearer token (from `host/.dev-token` in dev)
+
+### SSH port-forward (phone)
+
+On your phone (e.g. Termux):
+
+- `ssh -N -L 8787:127.0.0.1:8787 <user>@<your-computer>`
+
+Then set Base URL to `http://127.0.0.1:8787` in the app.
 
 ## Security notes
 
 - The app does not log the token.
 - The Android manifest enables cleartext HTTP so LAN usage works; prefer VPN/TLS when exposing beyond a trusted network.
-

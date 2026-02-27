@@ -15,6 +15,7 @@ Running v5 creates two artifacts in the repo root:
 - `MANIFEST.txt` — file list for the bundle
 - `cmd/` — captured command outputs and “code pointers” (snippets/greps)
 - `fixtures/` — small, redacted engine fixtures (Codex schema bundle + best-effort Cursor/agent NDJSON)
+  - Includes a best-effort `cmd/web_build.txt` run (`npm run build`) when `web/` is present.
 
 ## Redaction guarantees
 

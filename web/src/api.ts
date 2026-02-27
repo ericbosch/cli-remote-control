@@ -12,7 +12,19 @@ export function setToken(t: string): void {
 export function getBaseUrl(): string {
   const b = localStorage.getItem(BASE_KEY)
   if (b) return b
-  if (typeof window !== 'undefined') return window.location.origin
+  if (typeof window !== 'undefined') {
+    try {
+      const u = new URL(window.location.origin)
+      // Common dev setup: UI on :5173 but host API on :8787.
+      if (u.port && u.port !== '8787') {
+        u.port = '8787'
+        return u.toString().replace(/\/$/, '')
+      }
+      return window.location.origin
+    } catch {
+      // ignore
+    }
+  }
   return 'http://127.0.0.1:8787'
 }
 

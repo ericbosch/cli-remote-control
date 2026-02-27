@@ -202,6 +202,15 @@ write_summary() {
     ws_auth_mode="ticket"
   fi
 
+  local web_build="SKIP"
+  if [[ -f "${CMD_DIR}/web_build.txt" ]]; then
+    if rg -q '^exit=0$' "${CMD_DIR}/web_build.txt"; then
+      web_build="PASS"
+    else
+      web_build="FAIL"
+    fi
+  fi
+
   local git_dirty_count git_worktree_clean
   git_dirty_count="$(git status --porcelain=v1 2>/dev/null | wc -l | tr -d ' ')"
   if [[ "${git_dirty_count}" == "0" ]]; then
@@ -301,6 +310,7 @@ PY
     printf 'cursor_fixture_present=%s\n' "${cursor_fixture}"
     printf 'e2e_session_event=%s\n' "${e2e}"
     printf 'ws_auth_mode=%s\n' "${ws_auth_mode}"
+    printf 'web_build=%s\n' "${web_build}"
     printf 'git_worktree_clean=%s\n' "${git_worktree_clean}"
     if [[ "${git_worktree_clean}" == "FAIL" ]]; then
       printf 'git_dirty_item_count=%s\n' "${git_dirty_count}"
@@ -540,6 +550,13 @@ EOF
   if [[ -f "${CMD_DIR}/cursor-sample.stderr.txt" ]]; then
     redact_stream < "${CMD_DIR}/cursor-sample.stderr.txt" > "${CMD_DIR}/cursor-sample.stderr.txt.redacted" || true
     mv -f "${CMD_DIR}/cursor-sample.stderr.txt.redacted" "${CMD_DIR}/cursor-sample.stderr.txt" || true
+  fi
+
+  # Web build (best-effort): validates the UI can build on this machine.
+  if [[ -f "${ROOT}/web/package.json" ]]; then
+    capture_shell "web_build.txt" "cd \"${ROOT}/web\" && npm run build"
+  else
+    echo "web: not found" > "${CMD_DIR}/web_build.txt"
   fi
 
   # E2E validation (best-effort): create a shell session and observe at least 1 WS message.

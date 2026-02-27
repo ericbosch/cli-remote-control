@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 5.5 complete (WS ticket auth for browser WebSockets); Phase 6 in progress (UI polish + phone workflow)
+**Banner:** 🟢 Green — Phase 6 complete (browser WS tickets, UI reconnect/replay, phone port-forward workflow)
 
-**Current milestone:** Phase 6 — Web UI “remote control” experience
+**Current milestone:** Closeout — keep gates green
 
 ## Checklist
 
