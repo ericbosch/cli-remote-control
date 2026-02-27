@@ -1,0 +1,29 @@
+# Host
+host/.dev-token
+host/logs/
+*.log
+
+# Web
+web/dist/
+web/node_modules/
+.webpack/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.iml
+.idea/
+*.hprof
+
+# Env / secrets
+.env
+.env.local
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
