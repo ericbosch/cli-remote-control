@@ -38,9 +38,9 @@ stopped_any=false
 
 if command -v tmux >/dev/null 2>&1 && tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
   log "stopping tmux session: ${TMUX_SESSION}"
-  tmux send-keys -t "${TMUX_SESSION}" C-c || true
+  tmux send-keys -t "${TMUX_SESSION}" C-c 2>/dev/null || true
   sleep 0.5
-  tmux kill-session -t "${TMUX_SESSION}" || true
+  tmux kill-session -t "${TMUX_SESSION}" 2>/dev/null || true
   stopped_any=true
 fi
 

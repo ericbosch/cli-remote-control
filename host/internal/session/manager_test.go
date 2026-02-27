@@ -9,7 +9,7 @@ import (
 
 func TestManager_CreateListTerminate(t *testing.T) {
 	dir := t.TempDir()
-	m := NewManager(dir, 8)
+	m := NewManager(dir, 8, filepath.Join(t.TempDir(), "events"))
 	ctx := context.Background()
 
 	s1, err := m.Create(ctx, "shell", "s1", nil)
@@ -46,7 +46,7 @@ func TestManager_CreateListTerminate(t *testing.T) {
 
 func TestManager_TerminateNotFound(t *testing.T) {
 	dir := t.TempDir()
-	m := NewManager(dir, 8)
+	m := NewManager(dir, 8, filepath.Join(t.TempDir(), "events"))
 	err := m.Terminate("nonexistent")
 	if err != ErrNotFound {
 		t.Errorf("terminate nonexistent: got %v", err)
@@ -64,7 +64,7 @@ func TestIdString(t *testing.T) {
 
 func TestNewManager_CreatesLogDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "sub", "logs")
-	m := NewManager(dir, 8)
+	m := NewManager(dir, 8, filepath.Join(t.TempDir(), "events"))
 	ctx := context.Background()
 	s, err := m.Create(ctx, "shell", "", nil)
 	if err != nil {

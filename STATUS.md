@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 2 complete (canonical events + persistence); Phase 3 next (WS replay + API contract)
+**Banner:** 🟡 Yellow — Phase 3 complete (canonical WS replay + e2e); Phase 4 next (Codex app-server engine)
 
-**Current milestone:** Phase 2 — Canonical event model + replay contract
+**Current milestone:** Phase 3 — WS replay + session metadata
 
 ## Checklist
 

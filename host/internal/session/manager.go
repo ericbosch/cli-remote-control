@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -9,22 +10,27 @@ import (
 
 // Manager creates and tracks sessions.
 type Manager struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
-	counter  atomic.Uint64
-	logDir   string
-	bufKB    int
+	mu        sync.RWMutex
+	sessions  map[string]*Session
+	counter   atomic.Uint64
+	logDir    string
+	eventsDir string
+	bufKB     int
 }
 
 // NewManager creates a session manager. bufKB is the ring buffer size per session in KB.
-func NewManager(logDir string, bufKB int) *Manager {
+func NewManager(logDir string, bufKB int, eventsDir string) *Manager {
 	if bufKB <= 0 {
 		bufKB = 64
 	}
+	if eventsDir == "" {
+		eventsDir = filepath.Join(".run", "sessions")
+	}
 	return &Manager{
-		sessions: make(map[string]*Session),
-		logDir:   logDir,
-		bufKB:    bufKB,
+		sessions:  make(map[string]*Session),
+		logDir:    logDir,
+		eventsDir: eventsDir,
+		bufKB:     bufKB,
 	}
 }
 
@@ -35,7 +41,11 @@ func (m *Manager) Create(ctx context.Context, engine, name string, args map[stri
 	if name == "" {
 		name = "session-" + sid
 	}
-	s, err := NewSession(ctx, sid, name, engine, args, m.logDir, m.bufKB)
+	sessCtx := context.Background()
+	if ctx != nil {
+		sessCtx = context.WithoutCancel(ctx)
+	}
+	s, err := NewSession(sessCtx, sid, name, engine, args, m.logDir, m.eventsDir, m.bufKB)
 	if err != nil {
 		return nil, err
 	}

@@ -247,7 +247,18 @@ PY
   local e2e="SKIP"
   if [[ -f "${CMD_DIR}/e2e_ws_first_message.json" ]]; then
     if [[ -s "${CMD_DIR}/e2e_ws_first_message.json" ]]; then
-      e2e="PASS"
+      if python3 - <<'PY' "${CMD_DIR}/e2e_ws_first_message.json" 2>/dev/null
+import json,sys
+p=sys.argv[1]
+obj=json.load(open(p,'r',encoding='utf-8'))
+assert obj.get("ok") is True
+print("ok")
+PY
+      then
+        e2e="PASS"
+      else
+        e2e="FAIL"
+      fi
     else
       e2e="FAIL"
     fi
@@ -449,21 +460,62 @@ const fs = require('fs');
 const tokenFile = process.argv[2];
 const sessionId = process.argv[3];
 const token = fs.readFileSync(tokenFile, 'utf8').trim();
-const wsUrl = `ws://127.0.0.1:8787/ws/sessions/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(token)}`;
-const ws = new WebSocket(wsUrl);
-let done = false;
-function finish(code) {
-  if (done) return;
-  done = true;
-  try { ws.close(); } catch {}
-  process.exit(code);
+
+function wsConnect(url) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    ws.onopen = () => resolve(ws);
+    ws.onerror = (e) => reject(e);
+  });
 }
-ws.onmessage = (ev) => {
-  process.stdout.write(String(ev.data));
-  finish(0);
-};
-ws.onerror = () => finish(2);
-setTimeout(() => finish(3), 5000);
+
+function wsWaitForEvent(ws, predicate, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+    ws.onmessage = (ev) => {
+      try {
+        const obj = JSON.parse(String(ev.data));
+        if (predicate(obj)) {
+          clearTimeout(t);
+          resolve(obj);
+        }
+      } catch {
+        // ignore
+      }
+    };
+  });
+}
+
+(async () => {
+  const marker = `DIAG_E2E_${Date.now()}`;
+  const url1 = `ws://127.0.0.1:8787/ws/events/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(token)}&last_n=0`;
+  const ws1 = await wsConnect(url1);
+
+  const attached = await wsWaitForEvent(ws1, (e) => e && e.kind === 'status', 4000);
+  ws1.send(JSON.stringify({ type: 'input', data: `echo ${marker}\\n` }));
+
+  const out = await wsWaitForEvent(ws1, (e) => e && e.kind === 'assistant' && e.payload && typeof e.payload.data === 'string' && e.payload.data.includes(marker), 5000);
+  const seenSeq = out.seq || 0;
+  try { ws1.close(); } catch {}
+
+  const fromSeq = seenSeq > 0 ? (seenSeq - 1) : 0;
+  const url2 = `ws://127.0.0.1:8787/ws/events/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(token)}&from_seq=${encodeURIComponent(String(fromSeq))}`;
+  const ws2 = await wsConnect(url2);
+  const replay = await wsWaitForEvent(ws2, (e) => e && e.kind === 'assistant' && e.payload && typeof e.payload.data === 'string' && e.payload.data.includes(marker), 5000);
+  try { ws2.close(); } catch {}
+
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    marker,
+    attached_seq: attached.seq || 0,
+    marker_seq: seenSeq,
+    replay_seq: replay.seq || 0
+  }));
+  process.exit(0);
+})().catch((err) => {
+  process.stdout.write(JSON.stringify({ ok: false, error: String(err && err.message ? err.message : err) }));
+  process.exit(1);
+});
 NODE
         redact_stream < "${CMD_DIR}/e2e_ws_first_message.json" > "${CMD_DIR}/e2e_ws_first_message.json.redacted" || true
         mv -f "${CMD_DIR}/e2e_ws_first_message.json.redacted" "${CMD_DIR}/e2e_ws_first_message.json" || true

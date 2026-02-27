@@ -22,11 +22,11 @@ func websocketUpgrader() websocket.Upgrader {
 // WS protocol: client sends input, resize, ping; server sends output, replay, status, pong.
 
 type clientMsg struct {
-	Type string          `json:"type"`
-	Data string          `json:"data"`
-	Cols int             `json:"cols"`
-	Rows int             `json:"rows"`
-	TS   int64           `json:"ts"`
+	Type string `json:"type"`
+	Data string `json:"data"`
+	Cols int    `json:"cols"`
+	Rows int    `json:"rows"`
+	TS   int64  `json:"ts"`
 }
 
 type serverMsg struct {

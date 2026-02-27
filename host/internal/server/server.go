@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/ericbosch/cli-remote-control/host/internal/session"
@@ -19,7 +20,7 @@ type Server struct {
 
 // New creates a new server.
 func New(cfg Config) (*Server, error) {
-	mgr := session.NewManager(cfg.LogDir, 64)
+	mgr := session.NewManager(cfg.LogDir, 64, filepath.Join(".run", "sessions"))
 	mux := http.NewServeMux()
 	s := &Server{cfg: cfg, manager: mgr, mux: mux}
 	s.routes()
@@ -31,6 +32,7 @@ func (s *Server) routes() {
 
 	api := s.authMiddleware(false, http.HandlerFunc(s.handleAPI))
 	s.mux.Handle("/api/", api)
+	s.mux.Handle("/ws/events/", s.authMiddleware(true, http.HandlerFunc(s.handleWSEvents)))
 	s.mux.Handle("/ws/", s.authMiddleware(true, http.HandlerFunc(s.handleWS)))
 	if s.cfg.WebDir != "" {
 		s.mux.Handle("/", http.FileServer(http.Dir(s.cfg.WebDir)))
