@@ -126,12 +126,21 @@ func newCursorSession(ctx context.Context, id, name string, args map[string]inte
 	workspacePath, _ := args["workspacePath"].(string)
 	prompt, _ := args["prompt"].(string)
 
+	// Prefer "cursor agent" (official CLI entrypoint); fall back to bare "agent" if needed.
+	cursorBin := "cursor"
+	if _, err := exec.LookPath(cursorBin); err != nil {
+		cursorBin = "agent"
+	}
+
 	cmdArgs := []string{}
+	if cursorBin == "cursor" {
+		cmdArgs = append(cmdArgs, "agent")
+	}
 	if prompt != "" {
 		cmdArgs = append(cmdArgs, "-p", prompt)
 	}
 
-	cmd := exec.CommandContext(ctx, "agent", cmdArgs...)
+	cmd := exec.CommandContext(ctx, cursorBin, cmdArgs...)
 	if workspacePath != "" {
 		cmd.Dir = workspacePath
 	}
