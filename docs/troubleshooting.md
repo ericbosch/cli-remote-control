@@ -9,6 +9,15 @@
   - Unauth sessions should be `401`: `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/sessions`
   - Health should be `200`: `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/healthz`
 
+## Start host in background (tmux recommended)
+
+- Start (idempotent): `./scripts/host_bg_start.sh`
+  - Prefers tmux session `rc-host` if `tmux` is installed.
+  - Otherwise falls back to `nohup` with `host/.run/rc-host.pid` and `host/.run/rc-host.log`.
+- Status: `./scripts/host_bg_status.sh`
+- Stop (idempotent): `./scripts/host_bg_stop.sh`
+- Attach (tmux): `tmux attach -t rc-host`
+
 ## Host won’t start
 
 - **“No auth token set”** — Pass `--token=YOUR_TOKEN`, set `RC_TOKEN`, or use `--generate-dev-token`.

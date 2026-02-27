@@ -1,6 +1,6 @@
 # Status
 
-**Banner:** 🟡 Yellow — Preflight OK; diagnostics (v5) in progress; engines incomplete
+**Banner:** 🔴 Red — Codex sandbox blocks host bind; v5 cannot reach 127.0.0.1:8787
 
 **Current milestone:** M1 — Core Remote Terminal (PTY) + Android Native App
 

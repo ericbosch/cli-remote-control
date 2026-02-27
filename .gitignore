@@ -3,6 +3,7 @@ host/.dev-token
 host/logs/
 host/rc-host
 host/host/
+host/.run/
 *.log
 
 # Web
