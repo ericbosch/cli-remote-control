@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 4 complete (Codex app-server engine); Phase 5 next (Cursor NDJSON engine + dedupe)
+**Banner:** 🟡 Yellow — Phase 5 complete (Cursor NDJSON + dedupe fallback); Phase 6 next (UI replay/thinking)
 
-**Current milestone:** Phase 4 — Codex engine (app-server stdio)
+**Current milestone:** Phase 5 — Cursor/agent engine (NDJSON + PTY fallback)
 
 ## Checklist
 

@@ -119,7 +119,7 @@ func newShellSession(ctx context.Context, id, name, engine, logDir string, event
 // newCursorSession starts the Cursor CLI agent in a PTY.
 // It uses the official "agent" entrypoint and relies on browser-based login.
 // If the agent binary is missing or fails to start, this returns an error so the caller can fall back.
-func newCursorSession(ctx context.Context, id, name string, args map[string]interface{}, logDir string, eventsDir string, bufKB int) (*Session, error) {
+func newCursorPTYSession(ctx context.Context, id, name string, args map[string]interface{}, logDir string, eventsDir string, bufKB int) (*Session, error) {
 	if bufKB <= 0 {
 		bufKB = defaultBufKB
 	}
