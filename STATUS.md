@@ -1,6 +1,6 @@
 # Status
 
-**Banner:** 🟡 Yellow — M1 implemented; run and test
+**Banner:** 🔴 Red — Auth blocked (dev token returns 401); fixing now
 
 **Current milestone:** M1 — Core Remote Terminal (PTY) + Android Native App
 
@@ -24,7 +24,7 @@
 - Run: `./host/rc-host serve` (serves API + web at `/`)
 
 ### First run
-- On first run with `--generate-dev-token`, host writes `host/.dev-token` and prints the token (gitignored). Use it in web and Android as Bearer token.
+- On first run with `--generate-dev-token`, host writes `host/.dev-token` (gitignored). Use it in web and Android as Bearer token.
 
 ## Acceptance criteria (M1 gates)
 
