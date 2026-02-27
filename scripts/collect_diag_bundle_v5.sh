@@ -21,6 +21,16 @@ mkdir -p "${CMD_DIR}" "${FIX_DIR}"
 TOKEN_FILE="${ROOT}/host/.dev-token"
 BASE_URL="http://127.0.0.1:8787"
 
+maybe_start_host_bg() {
+  # Canonical behavior: start/ensure host is running before collecting diagnostics.
+  # Do not stop host at end (leave it running for dev).
+  if [[ -x "${ROOT}/scripts/host_bg_start.sh" ]]; then
+    "${ROOT}/scripts/host_bg_start.sh" 2>&1 | redact_stream > "${CMD_DIR}/host_bg_start.txt" || true
+  else
+    echo "host_bg_start: missing ${ROOT}/scripts/host_bg_start.sh" > "${CMD_DIR}/host_bg_start.txt"
+  fi
+}
+
 redact_stream() {
   # Best-effort redaction for text/json/jsonl/ndjson.
   # Do NOT attempt to be perfect; also avoid leaking by not capturing secrets in argv where possible.
@@ -63,7 +73,13 @@ capture_shell() {
 
 safe_http_code() {
   # Prints http code (or 000) without failing the script.
-  curl -sS -o /dev/null -w '%{http_code}\n' --connect-timeout 2 --max-time 5 "$1" 2>/dev/null || echo "000"
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 5 "$1" 2>/dev/null || true)"
+  if [[ -z "${code}" ]]; then
+    echo "000"
+  else
+    echo "${code}"
+  fi
 }
 
 auth_curl_to_file() {
@@ -205,7 +221,24 @@ write_summary() {
   local cursor_fixture="SKIP"
   if [[ -f "${FIX_DIR}/cursor-sample.full.ndjson" ]]; then
     if [[ -s "${FIX_DIR}/cursor-sample.full.ndjson" ]]; then
-      cursor_fixture="PASS"
+      # Validate that at least one line is JSON; avoid false PASS on plain-text error output.
+      if python3 - <<'PY' "${FIX_DIR}/cursor-sample.full.ndjson" 2>/dev/null
+import json,sys
+p=sys.argv[1]
+with open(p,'r',encoding='utf-8') as f:
+  for line in f:
+    line=line.strip()
+    if not line:
+      continue
+    json.loads(line)
+    print("ok")
+    break
+PY
+      then
+        cursor_fixture="PASS"
+      else
+        cursor_fixture="FAIL"
+      fi
     else
       cursor_fixture="FAIL"
     fi
@@ -221,8 +254,12 @@ write_summary() {
   fi
 
   local go="NO-GO"
-  if [[ "${host_listen}" == "PASS" && "${unauth_ok}" == "PASS" && "${auth_ok}" == "PASS" && "${healthz_ok}" == "PASS" && "${codex_schema}" == "PASS" ]]; then
-    go="GO"
+  if [[ "${host_listen}" == "PASS" && "${unauth_ok}" == "PASS" && "${auth_ok}" == "PASS" && "${healthz_ok}" == "PASS" ]]; then
+    if command -v codex >/dev/null 2>&1; then
+      [[ "${codex_schema}" == "PASS" ]] && go="GO"
+    else
+      go="GO"
+    fi
   fi
 
   {
@@ -258,6 +295,8 @@ zip_bundle() {
 main() {
   echo "Writing bundle: ${OUT_DIR}/ and ${ZIP_PATH}"
 
+  maybe_start_host_bg
+
   # Policy/environment inventory
   detect_api_keys_env
   write_token_diagnostics
@@ -280,7 +319,11 @@ main() {
   # Codex fixtures
   capture_cmd "codex_version.txt" codex --version
   capture_shell "codex_app_server_help_head.txt" "codex app-server --help | head -n 80"
-  capture_shell "codex_schema_generate.txt" "mkdir -p \"${FIX_DIR}/_codex_schema\"; codex app-server generate-json-schema --out \"${FIX_DIR}/_codex_schema\""
+  if command -v codex >/dev/null 2>&1; then
+    capture_shell "codex_schema_generate.txt" "mkdir -p \"${FIX_DIR}/_codex_schema\"; codex app-server generate-json-schema --out \"${FIX_DIR}/_codex_schema\""
+  else
+    echo "codex: not found" > "${CMD_DIR}/codex_schema_generate.txt"
+  fi
 
   # Cursor/agent fixtures (best-effort, structured NDJSON first)
   capture_shell "cursor_detect.txt" "if command -v cursor >/dev/null 2>&1; then echo \"entrypoint=cursor agent\"; elif command -v agent >/dev/null 2>&1; then echo \"entrypoint=agent\"; else echo \"entrypoint=unavailable\"; fi"
