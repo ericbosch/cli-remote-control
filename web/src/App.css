@@ -1,0 +1,194 @@
+.app {
+  padding: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.settings-btn {
+  background: #333;
+  color: #eee;
+  border: 1px solid #555;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error {
+  background: #4a1a1a;
+  color: #f88;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.settings-panel {
+  max-width: 400px;
+}
+
+.settings-panel label {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.settings-panel input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  background: #222;
+  border: 1px solid #444;
+  color: #eee;
+  border-radius: 4px;
+}
+
+.settings-panel button {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #2d5a27;
+  color: #eee;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sessions-panel h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+}
+
+.sessions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.sessions-header button {
+  padding: 0.35rem 0.75rem;
+  background: #2d5a27;
+  color: #eee;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sessions-header button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.session-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.session-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.session-name {
+  flex: 0 0 120px;
+  font-weight: 500;
+}
+
+.session-engine {
+  flex: 0 0 60px;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.session-state {
+  flex: 0 0 70px;
+  color: #8a8;
+  font-size: 0.85rem;
+}
+
+.session-list button {
+  padding: 0.25rem 0.5rem;
+  background: #333;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.session-list button.danger {
+  background: #5a2d2d;
+  border-color: #744;
+}
+
+.terminal-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 6rem);
+  min-height: 300px;
+}
+
+.terminal-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #666;
+}
+
+.status-dot.connected {
+  background: #3a3;
+}
+
+.status-dot.reconnecting {
+  background: #ca3;
+}
+
+.status-dot.closed {
+  background: #a33;
+}
+
+.close-btn {
+  margin-left: auto;
+  padding: 0.2rem 0.5rem;
+  background: #333;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.terminal {
+  flex: 1;
+  padding: 0.5rem;
+  background: #0d0d14;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.terminal .xterm {
+  padding: 0.5rem;
+}
