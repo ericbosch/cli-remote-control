@@ -215,3 +215,136 @@
 .terminal .xterm {
   padding: 0.5rem;
 }
+
+.session-panels {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.terminal-panel .terminal {
+  flex: 1;
+}
+
+.side-panel {
+  gap: 0.75rem;
+}
+
+.details {
+  background: #12121b;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 0.5rem;
+  overflow: auto;
+}
+
+.details summary {
+  cursor: pointer;
+  color: #ddd;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.pre-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #0d0d14;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+  color: #eee;
+}
+
+.input-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.input-row textarea {
+  flex: 1;
+  resize: vertical;
+  background: #12121b;
+  color: #eee;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.input-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.input-actions button {
+  padding: 0.4rem 0.6rem;
+  background: #2a2a3a;
+  color: #eee;
+  border: 1px solid #3a3a55;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.input-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.small-btn {
+  padding: 0.2rem 0.5rem;
+  background: #2a2a3a;
+  color: #eee;
+  border: 1px solid #3a3a55;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.status-banner {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid #2a2a3a;
+  color: #eee;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.status-banner.green {
+  background: rgba(50, 170, 50, 0.2);
+  border-color: rgba(50, 170, 50, 0.35);
+}
+
+.status-banner.yellow {
+  background: rgba(210, 160, 20, 0.2);
+  border-color: rgba(210, 160, 20, 0.35);
+}
+
+.status-banner.red {
+  background: rgba(170, 50, 50, 0.2);
+  border-color: rgba(170, 50, 50, 0.35);
+}
+
+.status-meta {
+  color: #aaa;
+}
+
+@media (max-width: 980px) {
+  .session-panels {
+    grid-template-columns: 1fr;
+  }
+}

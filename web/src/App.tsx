@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
-  createCursorSession,
+  createSession,
   listSessions,
   terminateSession,
   getToken,
@@ -32,6 +32,8 @@ export default function App() {
   const [workspacePath, setWorkspacePath] = useState('')
   const [prompt, setPrompt] = useState('')
   const [mode, setMode] = useState<'structured' | 'pty'>('pty')
+  const [engine, setEngine] = useState<'shell' | 'codex' | 'cursor'>('cursor')
+  const [name, setName] = useState('')
 
   const loadSessions = useCallback(async () => {
     if (!getToken()) return
@@ -39,6 +41,9 @@ export default function App() {
     try {
       const list = await listSessions()
       setSessions(list)
+      if (attachedId && !list.find((s) => s.id === attachedId)) {
+        setAttachedId(null)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load sessions')
     } finally {
@@ -55,10 +60,12 @@ export default function App() {
   const handleCreate = async () => {
     setError(null)
     try {
-      const s = await createCursorSession({
+      const s = await createSession({
+        engine,
         workspacePath,
         prompt,
         mode,
+        name: name || undefined,
       })
       setSessions((prev) => [...prev, s])
       setAttachedId(s.id)
@@ -126,16 +133,37 @@ export default function App() {
       </header>
       {error && <div className="error">{error}</div>}
       {attachedId ? (
-        <Terminal sessionId={attachedId} onClose={() => setAttachedId(null)} />
+        <Terminal
+          sessionId={attachedId}
+          session={sessions.find((s) => s.id === attachedId) || null}
+          onClose={() => setAttachedId(null)}
+        />
       ) : (
         <div className="sessions-panel">
           <div className="sessions-header">
             <h2>Sessions</h2>
             <button type="button" onClick={handleCreate} disabled={loading}>
-              New Cursor session
+              New session
             </button>
           </div>
           <div className="cursor-create">
+            <label>
+              Engine
+              <select value={engine} onChange={(e) => setEngine(e.target.value as 'shell' | 'codex' | 'cursor')}>
+                <option value="shell">shell</option>
+                <option value="codex">codex</option>
+                <option value="cursor">cursor</option>
+              </select>
+            </label>
+            <label>
+              Session name (optional)
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. auth-hardening"
+              />
+            </label>
             <label>
               Workspace path
               <input
@@ -154,13 +182,15 @@ export default function App() {
                 placeholder="e.g. set up tests for auth module"
               />
             </label>
-            <label>
-              Mode
-              <select value={mode} onChange={(e) => setMode(e.target.value as 'structured' | 'pty')}>
-                <option value="pty">PTY (terminal)</option>
-                <option value="structured">Structured (experimental)</option>
-              </select>
-            </label>
+            {engine === 'cursor' && (
+              <label>
+                Mode
+                <select value={mode} onChange={(e) => setMode(e.target.value as 'structured' | 'pty')}>
+                  <option value="pty">PTY (terminal)</option>
+                  <option value="structured">Structured (experimental)</option>
+                </select>
+              </label>
+            )}
           </div>
           {loading && sessions.length === 0 ? (
             <p>Loading…</p>
@@ -171,6 +201,7 @@ export default function App() {
                   <span className="session-name">{s.name || s.id}</span>
                   <span className="session-engine">{s.engine}</span>
                   <span className="session-state">{s.state}</span>
+                  <span className="session-seq">seq {s.last_seq ?? 0}</span>
                   <button type="button" onClick={() => setAttachedId(s.id)}>
                     Attach
                   </button>

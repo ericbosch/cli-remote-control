@@ -15,7 +15,7 @@ For each key decision: claim, reasoning, counterargument, and what would change 
 
 ## D2: WebSocket per session (not one WS multiplexing all sessions)
 
-- **Claim:** One WebSocket per session: `/ws/sessions/{id}`.
+- **Claim:** One WebSocket per session: `/ws/events/{id}` (canonical `SessionEvent` stream).
 - **Reasoning:** Simple model; attach = open WS to that session; no session id in every message.
 - **Counterargument:** Many sessions could mean many WS connections.
 - **Change-my-mind:** If we need to support 100+ concurrent sessions per host and connection count becomes a problem, consider a single WS with session id in each message.

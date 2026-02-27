@@ -43,7 +43,7 @@ func (s *Server) routes() {
 				return
 			}
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("rc-host: use /api/sessions and /ws/sessions/{id}\n"))
+			w.Write([]byte("rc-host: use /api/sessions and /ws/events/{id} (legacy: /ws/sessions/{id})\n"))
 		})
 	}
 }

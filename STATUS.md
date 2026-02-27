@@ -1,6 +1,6 @@
 # Status
 
-**Banner:** 🟡 Yellow — Step 1 complete (engine env strips `*_API_KEY` without mutating host); Phase 6 next (UI replay/thinking)
+**Banner:** 🟡 Yellow — Phase 6 complete (web UI consumes `/ws/events` with replay + thinking/tools panels); Phase 7 next (Android wrapper)
 
 **Current milestone:** Phase 5 — Cursor/agent engine (NDJSON + PTY fallback)
 
@@ -28,7 +28,7 @@
 
 ## Acceptance criteria (M1 gates)
 
-1. **Host:** `go run ./cmd/rc-host serve` binds 127.0.0.1, requires Bearer token, GET /api/sessions returns 200 with list, POST /api/sessions creates session, WS to /ws/sessions/{id} streams output and accepts input.
+1. **Host:** `go run ./cmd/rc-host serve` binds 127.0.0.1, requires Bearer token, GET /api/sessions returns 200 with list, POST /api/sessions creates session, WS to /ws/events/{id} streams events and accepts input/resize.
 2. **Web:** Session list, create, attach (xterm), input and resize work; disconnect and reattach replays buffer.
 3. **Android:** Settings (URL + token), session list, create, attach; terminal in WebView shows streamed output and sends input.
 4. **Docs:** setup-linux.md, security.md, troubleshooting.md exist and are accurate.

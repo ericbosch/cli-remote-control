@@ -34,6 +34,7 @@ export interface SessionInfo {
   engine: string
   state: string
   exit_code?: number
+  last_seq?: number
   created: string
 }
 
@@ -43,20 +44,21 @@ export async function listSessions(): Promise<SessionInfo[]> {
   return r.json()
 }
 
-export interface CreateCursorSessionBody {
-  workspacePath: string
-  prompt: string
-  mode: 'structured' | 'pty'
+export interface CreateSessionBody {
+  engine: 'shell' | 'codex' | 'cursor'
+  workspacePath?: string
+  prompt?: string
+  mode?: 'structured' | 'pty'
   name?: string
 }
 
-export async function createCursorSession(body: CreateCursorSessionBody): Promise<SessionInfo> {
-  const payload = {
-    engine: 'cursor',
-    workspacePath: body.workspacePath,
-    prompt: body.prompt,
-    mode: body.mode,
+export async function createSession(body: CreateSessionBody): Promise<SessionInfo> {
+  const payload: Record<string, unknown> = {
+    engine: body.engine,
     name: body.name,
+    workspacePath: body.workspacePath || '',
+    prompt: body.prompt || '',
+    mode: body.mode || '',
     args: {},
   }
   const r = await fetch(`${getBaseUrl()}/api/sessions`, {
@@ -76,9 +78,13 @@ export async function terminateSession(id: string): Promise<void> {
   if (!r.ok && r.status !== 404) throw new Error(`HTTP ${r.status}`)
 }
 
-export function wsUrl(sessionId: string): string {
+export function wsEventsUrl(sessionId: string, params?: Record<string, string>): string {
   const base = getBaseUrl().replace(/^http/, 'ws')
   const t = getToken()
-  const sep = base.includes('?') ? '&' : '?'
-  return `${base}/ws/sessions/${sessionId}${t ? `${sep}token=${encodeURIComponent(t)}` : ''}`
+  const url = new URL(`${base}/ws/events/${sessionId}`)
+  if (t) url.searchParams.set('token', t)
+  if (params) {
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  }
+  return url.toString()
 }
