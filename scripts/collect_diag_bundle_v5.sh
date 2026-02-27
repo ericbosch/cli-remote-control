@@ -275,6 +275,62 @@ PY
   } > "${out_path}"
 }
 
+write_report_md() {
+  # Human-friendly summary for sharing. Must be safe to publish: no raw tokens.
+  local out_path="${OUT_DIR}/REPORT.md"
+  local summary_path="${OUT_DIR}/SUMMARY.txt"
+
+  local head sha status
+  sha="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
+  status="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${status}" == "0" ]]; then
+    head="clean"
+  else
+    head="dirty(${status})"
+  fi
+
+  {
+    echo "# Diagnostics Report (v5)"
+    echo
+    echo "- generated_at: ${TS}"
+    echo "- diag_dir: ${OUT_DIR}/"
+    echo "- diag_zip: ${ZIP_PATH}"
+    echo "- git_head: ${sha}"
+    echo "- git_status: ${head}"
+    echo
+    echo "## SUMMARY.txt"
+    echo
+    echo '```'
+    if [[ -f "${summary_path}" ]]; then
+      cat "${summary_path}"
+    else
+      echo "missing: ${summary_path}"
+    fi
+    echo '```'
+    echo
+    echo "## Token diagnostics (safe)"
+    echo
+    echo '```'
+    if [[ -f "${CMD_DIR}/token_diagnostics.txt" ]]; then
+      cat "${CMD_DIR}/token_diagnostics.txt"
+    else
+      echo "missing: ${CMD_DIR}/token_diagnostics.txt"
+    fi
+    echo '```'
+    echo
+    echo "## How to reproduce"
+    echo
+    echo "- Start host (idempotent): \`./scripts/host_bg_start.sh\`"
+    echo "- Run diagnostics: \`./scripts/collect_diag_bundle_v5.sh\`"
+    echo "- Read results: \`cat ${OUT_DIR}/SUMMARY.txt\`"
+    echo
+    echo "## Notes"
+    echo
+    echo "- Redaction: bearer tokens, query tokens, access/refresh tokens, and \`*_API_KEY\` values are redacted from captured outputs."
+    echo "- This report is generated to be safe to share; it must not contain raw secrets."
+  } > "${out_path}"
+}
+
 write_manifest() {
   local out_path="${OUT_DIR}/MANIFEST.txt"
   (
@@ -420,6 +476,7 @@ NODE
   fi
 
   write_summary
+  write_report_md
   write_manifest
   zip_bundle
 }
