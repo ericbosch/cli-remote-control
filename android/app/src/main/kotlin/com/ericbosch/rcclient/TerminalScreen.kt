@@ -21,6 +21,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 @Composable
 fun TerminalScreen(sessionId: String, onBack: () -> Unit) {
     val baseUrl = Preferences.getBaseUrl()
+    val token = Preferences.getToken()
     val url = "$baseUrl?attach=$sessionId"
 
     Scaffold(
@@ -48,7 +49,18 @@ fun TerminalScreen(sessionId: String, onBack: () -> Unit) {
                     }
                     webViewClient = WebViewClient()
                     webChromeClient = WebChromeClient()
-                    loadUrl(url)
+                    // Inject token into localStorage then load the terminal URL so the web app can auth
+                    val escapedToken = token.replace("\\", "\\\\").replace("'", "\\'")
+                    val escapedBase = baseUrl.replace("\\", "\\\\").replace("'", "\\'")
+                    val escapedUrl = url.replace("\\", "\\\\").replace("'", "\\'")
+                    val html = """
+                        <html><head><script>
+                        localStorage.setItem('rc-token', '$escapedToken');
+                        localStorage.setItem('rc-base', '$escapedBase');
+                        window.location.href = '$escapedUrl';
+                        </script></head><body>Loading...</body></html>
+                    """.trimIndent()
+                    loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null)
                 }
             }
         )
