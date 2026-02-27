@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ericbosch/cli-remote-control/host/internal/policy"
 	"github.com/ericbosch/cli-remote-control/host/internal/server"
 	"github.com/spf13/cobra"
 )
@@ -124,16 +125,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Policy: no API-key based auth for engines (subscription login only; never PAYG keys).
-	// If any *_API_KEY variables are present, explicitly log that they are ignored and unset them.
-	for _, kv := range os.Environ() {
-		k, _, ok := strings.Cut(kv, "=")
-		if !ok {
-			continue
+	// We do not mutate the host process environment. Instead, engine subprocesses are started with a
+	// sanitized environment that strips any *_API_KEY variables.
+	_, removed := policy.EngineEnv(os.Environ())
+	if len(removed) > 0 {
+		preview := strings.Join(removed, ", ")
+		if len(preview) > 512 {
+			preview = preview[:512] + "…"
 		}
-		if strings.HasSuffix(k, "_API_KEY") && os.Getenv(k) != "" {
-			log.Printf("Warning: %s is set but ignored by policy; ignoring it.", k)
-			os.Unsetenv(k)
-		}
+		log.Printf("Warning: %d env vars matching *_API_KEY are set; they will be removed from engine subprocess env: %s", len(removed), preview)
 	}
 
 	if bind == "0.0.0.0" {

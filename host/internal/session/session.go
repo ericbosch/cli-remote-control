@@ -16,6 +16,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/ericbosch/cli-remote-control/host/internal/codexrpc"
 	"github.com/ericbosch/cli-remote-control/host/internal/events"
+	"github.com/ericbosch/cli-remote-control/host/internal/policy"
 )
 
 const defaultBufKB = 64
@@ -101,7 +102,8 @@ func newShellSession(ctx context.Context, id, name, engine, logDir string, event
 	}
 	s.logFile = lf
 	cmd := exec.CommandContext(ctx, "bash")
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	env, _ := policy.EngineEnv(os.Environ())
+	cmd.Env = append(env, "TERM=xterm-256color")
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		lf.Close()
@@ -177,7 +179,8 @@ func newCursorPTYSession(ctx context.Context, id, name string, args map[string]i
 	if workspacePath != "" {
 		cmd.Dir = workspacePath
 	}
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	env, _ := policy.EngineEnv(os.Environ())
+	cmd.Env = append(env, "TERM=xterm-256color")
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {

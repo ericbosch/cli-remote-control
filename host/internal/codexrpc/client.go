@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/ericbosch/cli-remote-control/host/internal/policy"
 )
 
 type RPCError struct {
@@ -43,6 +46,9 @@ type Client struct {
 
 func Start(ctx context.Context) (*Client, error) {
 	cmd := exec.CommandContext(ctx, "codex", "app-server", "--listen", "stdio://")
+	if env, _ := policy.EngineEnv(os.Environ()); len(env) > 0 {
+		cmd.Env = env
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ericbosch/cli-remote-control/host/internal/events"
+	"github.com/ericbosch/cli-remote-control/host/internal/policy"
 )
 
 type cursorNDJSONRow struct {
@@ -103,6 +104,8 @@ func newCursorNDJSONSession(ctx context.Context, id, name string, args map[strin
 	if workspacePath != "" {
 		cmd.Dir = workspacePath
 	}
+	env, _ := policy.EngineEnv(os.Environ())
+	cmd.Env = append(env, "TERM=xterm-256color")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		lf.Close()

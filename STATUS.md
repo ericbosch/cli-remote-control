@@ -1,6 +1,6 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 5 complete (Cursor NDJSON + dedupe fallback); Phase 6 next (UI replay/thinking)
+**Banner:** 🟡 Yellow — Step 1 complete (engine env strips `*_API_KEY` without mutating host); Phase 6 next (UI replay/thinking)
 
 **Current milestone:** Phase 5 — Cursor/agent engine (NDJSON + PTY fallback)
 

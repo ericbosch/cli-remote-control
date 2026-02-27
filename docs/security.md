@@ -26,4 +26,6 @@ If you bind to **0.0.0.0** (e.g. to use the app from your phone on the same LAN)
 
 ## Provider API keys
 
-- **Never** store provider API keys (e.g. for Claude, Gemini) in the Android app or in any relay. CLIs use the host’s environment and config only.
+- **NO PAYG policy:** the host does not use provider pay-as-you-go API keys for engines.
+- The host starts engine subprocesses with a **sanitized environment** that removes any `*_API_KEY` variables (values are never logged).
+- Do not store any provider API keys (e.g. OpenAI/Anthropic/Gemini) in the Android app or in any relay.
