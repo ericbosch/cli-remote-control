@@ -1,6 +1,6 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 6 complete (web UI consumes `/ws/events` with replay + thinking/tools panels); Phase 7 next (Android wrapper)
+**Banner:** 🟡 Yellow — Phase 7 implemented (Android WebView wrapper + Gradle wrapper); build verification SKIP (Android SDK not present)
 
 **Current milestone:** Phase 5 — Cursor/agent engine (NDJSON + PTY fallback)
 
@@ -43,4 +43,5 @@
 
 ## Known issues
 
-- (None yet)
+- `cd web && npm audit` reports a moderate `esbuild` advisory via `vite`; fix requires a breaking Vite major upgrade.
+- `cd android && ./gradlew assembleDebug` requires a local Android SDK (`ANDROID_HOME` or `android/local.properties`).

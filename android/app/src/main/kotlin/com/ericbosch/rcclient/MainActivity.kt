@@ -20,24 +20,18 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val navController = rememberNavController()
+                    val start = if (Preferences.getToken().isNotEmpty()) "web" else "settings"
                     NavHost(
                         navController = navController,
-                        startDestination = "sessions"
+                        startDestination = start
                     ) {
                         composable("settings") {
                             SettingsScreen(
-                                onSaved = { navController.navigate("sessions") { popUpTo(0) } }
+                                onSaved = { navController.navigate("web") { popUpTo(0) } }
                             )
                         }
-                        composable("sessions") {
-                            SessionsScreen(
-                                onOpenSettings = { navController.navigate("settings") },
-                                onAttach = { id -> navController.navigate("terminal/$id") }
-                            )
-                        }
-                        composable("terminal/{sessionId}") { backStackEntry ->
-                            val id = backStackEntry.arguments?.getString("sessionId") ?: ""
-                            TerminalScreen(sessionId = id, onBack = { navController.popBackStack() })
+                        composable("web") {
+                            WebAppScreen(onOpenSettings = { navController.navigate("settings") })
                         }
                     }
                 }
