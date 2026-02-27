@@ -342,6 +342,86 @@ write_report_md() {
   } > "${out_path}"
 }
 
+write_staff_summary_md() {
+  # Higher-level, shareable summary intended for humans/reviewers.
+  # Must not contain raw tokens.
+  local out_path="${OUT_DIR}/STAFF_SUMMARY.md"
+
+  local head sha status
+  sha="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
+  status="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${status}" == "0" ]]; then
+    head="clean"
+  else
+    head="dirty(${status})"
+  fi
+
+  {
+    echo "# cli-remote-control — Staff summary"
+    echo
+    echo "- generated_at: ${TS}"
+    echo "- diag_dir: ${OUT_DIR}/"
+    echo "- diag_zip: ${ZIP_PATH}"
+    echo "- git_head: ${sha}"
+    echo "- git_status: ${head}"
+    echo
+    echo "## Progress (pushed to origin/main)"
+    echo
+    echo "- Phase 2: canonical event model + ring buffer + JSONL persistence + dedupe tests"
+    echo "  - Commit: \`e2c2e1f\` \`feat(core): canonical events + ring buffer + jsonl persistence + dedupe tests\`"
+    echo "- Phase 3: canonical WS replay + session metadata + improved v5 E2E"
+    echo "  - Commit: \`ecc01de\` \`feat(host): ws replay + session metadata + improved e2e\`"
+    echo "- Phase 4: Codex engine via \`codex app-server --listen stdio://\` (JSON-RPC) + event mapping + smoke test tag"
+    echo "  - Commit: \`b7eb5a3\` \`feat(codex): app-server stdio engine + json-rpc + event mapping\`"
+    echo "- Phase 5: Cursor/agent structured NDJSON first + dedupe + PTY fallback"
+    echo "  - Commit: \`00c04fd\` \`feat(cursor): structured NDJSON engine + dedupe + PTY fallback\`"
+    echo
+    echo "## What changed (high-signal)"
+    echo
+    echo "- Canonical events (stable JSON contract):"
+    echo "  - \`host/internal/events\` defines \`SessionEvent{session_id, engine, ts_ms, seq, kind, payload}\` + \`EventKind\`."
+    echo "  - Per-session ring buffer assigns monotonic \`seq\` and supports replay."
+    echo "  - JSONL persistence under \`host/.run/sessions/<session_id>.jsonl\` (local-only)."
+    echo "  - Dedupe utility + fixture-based tests (Cursor duplicate assistant message)."
+    echo "- WebSocket replay contract:"
+    echo "  - \`GET /ws/events/{session_id}?from_seq=<u64>|last_n=<int>\` streams canonical \`SessionEvent\` JSON."
+    echo "  - Documented in \`docs/architecture.md\`."
+    echo "- Reliability fix:"
+    echo "  - Sessions no longer inherit HTTP request context (prevents immediate session death after POST returns)."
+    echo "- Diagnostics v5:"
+    echo "  - E2E validates replay + live tail on \`/ws/events\` and records JSON result."
+    echo "- Engines:"
+    echo "  - Codex: official app-server stdio JSON-RPC initialize → thread/start → turn/start; maps deltas/errors."
+    echo "  - Cursor/agent: structured NDJSON parsing + dedupe; PTY fallback."
+    echo
+    echo "## Non-negotiables check"
+    echo
+    echo "- No PAYG APIs: any \`*_API_KEY\` env vars are ignored by policy (values never recorded)."
+    echo "- Security: host binds \`127.0.0.1\` by default; \`/api/*\` requires Bearer token; no raw tokens printed."
+    echo "- Reliability: WS replay supported; persisted JSONL transcripts present."
+    echo
+    echo "## How to verify"
+    echo
+    echo "- Tests: \`cd host && go test ./...\`"
+    echo "- Start host (idempotent): \`./scripts/host_bg_start.sh\`"
+    echo "- Run diagnostics: \`./scripts/collect_diag_bundle_v5.sh\`"
+    echo
+    echo "## Latest bundle SUMMARY.txt"
+    echo
+    echo '```'
+    if [[ -f "${OUT_DIR}/SUMMARY.txt" ]]; then
+      cat "${OUT_DIR}/SUMMARY.txt"
+    else
+      echo "missing: ${OUT_DIR}/SUMMARY.txt"
+    fi
+    echo '```'
+    echo
+    echo "## Secrets"
+    echo
+    echo "- This file intentionally contains no auth token values."
+  } > "${out_path}"
+}
+
 write_manifest() {
   local out_path="${OUT_DIR}/MANIFEST.txt"
   (
@@ -529,6 +609,7 @@ NODE
 
   write_summary
   write_report_md
+  write_staff_summary_md
   write_manifest
   zip_bundle
 }
