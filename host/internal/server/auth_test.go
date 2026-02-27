@@ -1,7 +1,6 @@
 package server
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,29 +11,25 @@ func TestAuthMiddleware_BearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(corsMiddleware(s.mux))
-	t.Cleanup(ts.Close)
+	h := corsMiddleware(s.mux)
 
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/sessions", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauth status=%d", resp.StatusCode)
+	{
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://example/api/sessions", nil)
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("unauth status=%d", rr.Code)
+		}
 	}
 
-	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/sessions", nil)
-	req.Header.Set("Authorization", "Bearer t0k")
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("auth status=%d", resp.StatusCode)
+	{
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://example/api/sessions", nil)
+		req.Header.Set("Authorization", "Bearer t0k")
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("auth status=%d", rr.Code)
+		}
 	}
 }
 
@@ -43,19 +38,14 @@ func TestAuthMiddleware_RawToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(corsMiddleware(s.mux))
-	t.Cleanup(ts.Close)
+	h := corsMiddleware(s.mux)
 
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/sessions", nil)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/api/sessions", nil)
 	req.Header.Set("Authorization", "raw")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("auth status=%d", resp.StatusCode)
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("auth status=%d", rr.Code)
 	}
 }
 
@@ -64,17 +54,13 @@ func TestAuthMiddleware_EmptyConfigTokenRejectsAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(corsMiddleware(s.mux))
-	t.Cleanup(ts.Close)
+	h := corsMiddleware(s.mux)
 
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/sessions", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode < 500 {
-		t.Fatalf("expected 5xx for empty token, got %d", resp.StatusCode)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/api/sessions", nil)
+	h.ServeHTTP(rr, req)
+	if rr.Code < 500 {
+		t.Fatalf("expected 5xx for empty token, got %d", rr.Code)
 	}
 }
 
@@ -83,17 +69,13 @@ func TestAPI_DoesNotAcceptQueryToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(corsMiddleware(s.mux))
-	t.Cleanup(ts.Close)
+	h := corsMiddleware(s.mux)
 
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/sessions?token=q", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/api/sessions?token=q", nil)
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
 	}
 }
 
@@ -102,15 +84,12 @@ func TestHealthz_NoAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(corsMiddleware(s.mux))
-	t.Cleanup(ts.Close)
+	h := corsMiddleware(s.mux)
 
-	resp, err := http.Get(ts.URL + "/healthz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("healthz status=%d", resp.StatusCode)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/healthz", nil)
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("healthz status=%d", rr.Code)
 	}
 }

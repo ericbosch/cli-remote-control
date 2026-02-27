@@ -5,9 +5,24 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/creack/pty"
 )
 
+func requirePTY(t *testing.T) {
+	t.Helper()
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		t.Skipf("pty unavailable: %v", err)
+		return
+	}
+	_ = ptmx.Close()
+	_ = tty.Close()
+}
+
 func TestManager_CreateListTerminate(t *testing.T) {
+	requirePTY(t)
+
 	dir := t.TempDir()
 	m := NewManager(dir, 8, filepath.Join(t.TempDir(), "events"))
 	ctx := context.Background()
@@ -63,6 +78,8 @@ func TestIdString(t *testing.T) {
 }
 
 func TestNewManager_CreatesLogDir(t *testing.T) {
+	requirePTY(t)
+
 	dir := filepath.Join(t.TempDir(), "sub", "logs")
 	m := NewManager(dir, 8, filepath.Join(t.TempDir(), "events"))
 	ctx := context.Background()
