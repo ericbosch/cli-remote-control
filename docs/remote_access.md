@@ -28,7 +28,7 @@ If you're running the always-on systemd service, use the “live” helper scrip
 
 Shared HTTPS:443 note:
 
-- If another app already owns `https:443` on this node, `live_expose_tailscale.sh` will add rc-host under `/rc` (path mapping) instead of replacing `/`.
+- If another app already owns `https:443` on this node, prefer exposing rc-host on a dedicated port (default: `https:8443`) to avoid breaking single-page apps behind a path prefix.
 
 4) Disable Serve when done:
 
