@@ -1,0 +1,1031 @@
+#!/usr/bin/env bash
+#
+# Canonical diagnostics bundle (v7).
+# - Produces: diag_YYYYMMDD_HHMMSS/ and diag_YYYYMMDD_HHMMSS.zip in repo root
+# - Captures checklist-driven diagnostics with explicit PASS/FAIL/SKIP summary
+# - Never records raw secrets (tokens/tickets). If a secret is detected, only path + bytes + sha256 are recorded.
+set -euo pipefail
+set +H # disable history expansion ("! event not found") for safety in shells with histexpand enabled
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+TS="$(date +%Y%m%d_%H%M%S)"
+OUT_DIR="diag_${TS}"
+ZIP_PATH="${OUT_DIR}.zip"
+
+CMD_DIR="${OUT_DIR}/cmd"
+CODE_DIR="${OUT_DIR}/code"
+
+mkdir -p "${CMD_DIR}" "${CODE_DIR}"
+
+PORT="${RC_HOST_PORT:-8787}"
+BASE_URL="http://127.0.0.1:${PORT}"
+TOKEN_FILE="${ROOT}/host/.dev-token"
+SERVICE_NAME="cli-remote-control.service"
+
+log() { printf '%s %s\n' "$(date -Is)" "$*" >&2; }
+
+redact_stream() {
+  # Best-effort redaction for captured outputs. Self-check below ensures we didn't leak.
+  perl -pe '
+    s/(Authorization:\s*Bearer)\s+[^\s"]+/$1 REDACTED/gmi;
+    s/([?&](token|ticket)=)[^&\s"]+/$1REDACTED/gmi;
+    s/("?(access_token|refresh_token)"?\s*:\s*")[^"]+/$1REDACTED/gmi;
+    s/("?(ws_)?ticket"?\s*:\s*")[^"]+/$1REDACTED/gmi;
+    s/("?[A-Za-z0-9_]*API_KEY"?\s*[:=]\s*")[^"]+/$1REDACTED/gmi;
+    s/\b([A-Za-z0-9_]*API_KEY)=\S+/$1=REDACTED/gm;
+  '
+}
+
+capture_cmd() {
+  local out_name="$1"
+  shift
+  local out_path="${CMD_DIR}/${out_name}"
+  {
+    echo "\$ $*"
+    set +e
+    "$@"
+    local rc=$?
+    set -e
+    echo "exit=${rc}"
+  } 2>&1 | redact_stream > "${out_path}"
+}
+
+capture_shell() {
+  local out_name="$1"
+  local script="$2"
+  local out_path="${CMD_DIR}/${out_name}"
+  {
+    echo "\$ bash -lc <script>"
+    set +e
+    bash -lc "${script}"
+    local rc=$?
+    set -e
+    echo "exit=${rc}"
+  } 2>&1 | redact_stream > "${out_path}"
+}
+
+safe_http_code() {
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 5 "$1" 2>/dev/null || true)"
+  echo "${code:-000}"
+}
+
+file_fingerprint() {
+  # Prints: bytes sha256 path
+  local p="$1"
+  local bytes sha
+  bytes="$(wc -c < "${p}" | tr -d ' ')"
+  sha="$(sha256sum "${p}" | awk '{print $1}')"
+  printf '%s %s %s\n' "${bytes}" "${sha}" "${p}"
+}
+
+maybe_start_host_bg() {
+  # Canonical behavior: start/ensure host is running before collecting diagnostics.
+  # Do not stop host at end (leave it running for dev).
+  if [[ -x "${ROOT}/scripts/host_bg_start.sh" ]]; then
+    "${ROOT}/scripts/host_bg_start.sh" 2>&1 | redact_stream > "${CMD_DIR}/host_bg_start.txt" || true
+  else
+    echo "host_bg_start: missing ${ROOT}/scripts/host_bg_start.sh" > "${CMD_DIR}/host_bg_start.txt"
+  fi
+}
+
+write_token_diagnostics() {
+  local out_path="${CMD_DIR}/token_diagnostics.txt"
+  if [[ ! -f "${TOKEN_FILE}" ]]; then
+    printf 'token_file_path=%s\nexists=false\n' "${TOKEN_FILE}" > "${out_path}"
+    return 0
+  fi
+
+  local sha file_bytes token_bytes
+  sha="$(sha256sum "${TOKEN_FILE}" | awk '{print $1}')"
+  file_bytes="$(wc -c < "${TOKEN_FILE}" | tr -d ' ')"
+  token_bytes="$(tr -d '\r\n' < "${TOKEN_FILE}" | wc -c | tr -d ' ')"
+
+  {
+    printf 'token_file_path=%s\n' "${TOKEN_FILE}"
+    printf 'exists=true\n'
+    printf 'token_byte_length=%s\n' "${token_bytes}"
+    printf 'token_file_byte_length=%s\n' "${file_bytes}"
+    printf 'sha256(token_file)=%s\n' "${sha}"
+  } > "${out_path}"
+}
+
+auth_request_keys_only() {
+  # Usage: auth_request_keys_only <method> <url> <http_out> <keys_out>
+  # Records only:
+  # - HTTP status
+  # - JSON shape summary (no values):
+  #   - dict: one key per line
+  #   - list: list_len=N
+  local method="$1"
+  local url="$2"
+  local http_out="$3"
+  local keys_out="$4"
+
+  if [[ ! -f "${TOKEN_FILE}" ]]; then
+    echo "TOKEN_FILE_MISSING" > "${http_out}"
+    echo "SKIP (token file missing)" > "${keys_out}"
+    return 0
+  fi
+
+  local token tmp_body
+  token="$(tr -d '\r\n' < "${TOKEN_FILE}")"
+  tmp_body="$(mktemp)"
+  trap 'rm -f "${tmp_body}" 2>/dev/null || true' RETURN
+
+  local code
+  code="$(
+    curl -sS -o "${tmp_body}" -w '%{http_code}\n' -K - <<EOF 2>/dev/null || true
+url = "${url}"
+request = "${method}"
+header = "Authorization: Bearer ${token}"
+EOF
+  )"
+  printf '%s\n' "${code:-000}" > "${http_out}"
+
+  if python3 - "${tmp_body}" > "${keys_out}" 2>/dev/null <<'PY'
+import json,sys
+p=sys.argv[1]
+try:
+  with open(p,'r',encoding='utf-8') as f:
+    obj=json.load(f)
+except Exception as e:
+  print(f"SKIP (non-json body: {type(e).__name__})")
+  raise SystemExit(0)
+if isinstance(obj, dict):
+  for k in sorted(obj.keys()):
+    print(k)
+elif isinstance(obj, list):
+  print(f"list_len={len(obj)}")
+else:
+  print(f"SKIP (json type={type(obj).__name__})")
+PY
+  then
+    :
+  else
+    echo "SKIP (python3 failed)" > "${keys_out}"
+  fi
+
+  rm -f "${tmp_body}" 2>/dev/null || true
+  trap - RETURN
+}
+
+detect_ui_root_headers() {
+  local out_path="${CMD_DIR}/ui_root_headers.txt"
+  local hdr_tmp
+  hdr_tmp="$(mktemp)"
+  trap 'rm -f "${hdr_tmp}" 2>/dev/null || true' RETURN
+
+  # Capture headers only; no body.
+  set +e
+  curl -sS -D "${hdr_tmp}" -o /dev/null --connect-timeout 2 --max-time 5 "${BASE_URL}/" 2>/dev/null
+  local rc=$?
+  set -e
+
+  {
+    echo "\$ curl -sS -D <file> ${BASE_URL}/ -o /dev/null"
+    echo "exit=${rc}"
+    echo
+    if [[ -s "${hdr_tmp}" ]]; then
+      cat "${hdr_tmp}" | redact_stream
+    else
+      echo "(no headers captured)"
+    fi
+  } > "${out_path}"
+
+  rm -f "${hdr_tmp}" 2>/dev/null || true
+  trap - RETURN
+}
+
+detect_ui_deeplink_headers() {
+  local out_path="${CMD_DIR}/ui_deeplink_headers.txt"
+  local hdr_tmp
+  hdr_tmp="$(mktemp)"
+  trap 'rm -f "${hdr_tmp}" 2>/dev/null || true' RETURN
+
+  # Capture headers only; no body. Use Accept:text/html to simulate a browser navigation.
+  set +e
+  curl -sS -H "Accept: text/html" -D "${hdr_tmp}" -o /dev/null --connect-timeout 2 --max-time 5 "${BASE_URL}/__rc_deeplink_test__/sessions/abc" 2>/dev/null
+  local rc=$?
+  set -e
+
+  {
+    echo "\$ curl -sS -H 'Accept: text/html' -D <file> ${BASE_URL}/__rc_deeplink_test__/sessions/abc -o /dev/null"
+    echo "exit=${rc}"
+    echo
+    if [[ -s "${hdr_tmp}" ]]; then
+      cat "${hdr_tmp}" | redact_stream
+    else
+      echo "(no headers captured)"
+    fi
+  } > "${out_path}"
+
+  rm -f "${hdr_tmp}" 2>/dev/null || true
+  trap - RETURN
+}
+
+tailscale_status_best_effort() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    echo "tailscale: not found" > "${CMD_DIR}/tailscale_version.txt"
+    echo "tailscale: not found" > "${CMD_DIR}/tailscale_serve_status.txt"
+    echo "{}" > "${CMD_DIR}/tailscale_serve_status.json"
+    return 0
+  fi
+
+  capture_cmd "tailscale_version.txt" tailscale --version
+
+  if tailscale serve status > "${CMD_DIR}/tailscale_serve_status.txt" 2>&1; then
+    : # ok
+  elif command -v sudo >/dev/null 2>&1 && sudo -n tailscale serve status > "${CMD_DIR}/tailscale_serve_status.txt" 2>&1; then
+    : # ok
+  else
+    # Preserve whatever output we got for debugging.
+    :
+  fi
+
+  if tailscale serve status -json > "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null; then
+    :
+  elif command -v sudo >/dev/null 2>&1 && sudo -n tailscale serve status -json > "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null; then
+    :
+  else
+    echo "{}" > "${CMD_DIR}/tailscale_serve_status.json"
+  fi
+
+  redact_stream < "${CMD_DIR}/tailscale_serve_status.txt" > "${CMD_DIR}/tailscale_serve_status.txt.redacted" 2>/dev/null || true
+  mv -f "${CMD_DIR}/tailscale_serve_status.txt.redacted" "${CMD_DIR}/tailscale_serve_status.txt" 2>/dev/null || true
+}
+
+write_code_pointers() {
+  local out_path="${CODE_DIR}/pointers.txt"
+  {
+    echo "# code pointers (paths + line snippets; no secrets expected)"
+    echo
+    echo "## host flags (--web-dir, auth, ws-ticket)"
+    rg -n "web-dir|generate-dev-token|Authorization|ws-ticket" -S host 2>/dev/null | head -n 200 || true
+    echo
+    echo "## web uses ws-ticket"
+    rg -n "/api/ws-ticket|ws-ticket" -S web 2>/dev/null | head -n 120 || true
+    echo
+    echo "## android scaffold"
+    rg -n "android/" -S README.md docs 2>/dev/null | head -n 80 || true
+    echo
+    echo "## scripts duplicates scan"
+    rg -n "collect_diag_bundle_v[0-9]+|collect_diag_bundle|expose_tailscale|unexpose_tailscale|expose_lan|unexpose_lan|host_bg_start|host_bg_stop|host_bg_status|run_ui_local|--web-dir|ws-ticket" -S scripts docs 2>/dev/null | head -n 200 || true
+  } | redact_stream > "${out_path}"
+}
+
+write_manifest() {
+  local out_path="${OUT_DIR}/MANIFEST.txt"
+  (
+    cd "${OUT_DIR}"
+    find . -type f -print | sort
+  ) > "${out_path}"
+}
+
+zip_bundle() {
+  local out_path="${CMD_DIR}/zip.txt"
+  if command -v zip >/dev/null 2>&1; then
+    (zip -qr "${ZIP_PATH}" "${OUT_DIR}" && echo "created ${ZIP_PATH}") > "${out_path}" 2>&1
+    return 0
+  fi
+
+  # Fallback: python zipfile (no external deps).
+  python3 - "${OUT_DIR}" "${ZIP_PATH}" > "${out_path}" 2>&1 <<'PY'
+import os,sys,zipfile
+root_dir=sys.argv[1]
+zip_path=sys.argv[2]
+with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+  for base,_,files in os.walk(root_dir):
+    for f in files:
+      p=os.path.join(base,f)
+      arc=os.path.relpath(p, start=os.path.dirname(root_dir))
+      z.write(p, arcname=arc)
+print(f"created {zip_path}")
+PY
+}
+
+redaction_selfcheck() {
+  # Self-check outputs must never print raw matches. Only record filenames + fingerprints.
+  local out_path="${CMD_DIR}/redaction_selfcheck.txt"
+  local ok="PASS"
+
+  {
+    echo "redaction_selfcheck:"
+    echo
+    echo "Policy: never record raw secrets. If matches exist, only file path + bytes + sha256(file) are emitted."
+    echo
+  } > "${out_path}"
+
+  if ! command -v rg >/dev/null 2>&1; then
+    echo "rg: not found; SKIP self-check" >> "${out_path}"
+    echo "SKIP"
+    return 0
+  fi
+
+  # Patterns: no lookarounds required.
+  # - Bearer tokens in headers
+  # - token= / ticket= query params
+  # - access/refresh tokens in JSON
+  local -a patterns=(
+    'Authorization:\s*Bearer\s+[A-Za-z0-9._-]{12,}'
+    '[?&]token=[A-Za-z0-9._-]{12,}'
+    '[?&]ticket=[A-Za-z0-9._-]{12,}'
+    '"access_token"\s*:\s*"[A-Za-z0-9._-]{12,}'
+    '"refresh_token"\s*:\s*"[A-Za-z0-9._-]{12,}'
+    'ticket=[A-Za-z0-9._-]{12,}'
+  )
+
+  for pat in "${patterns[@]}"; do
+    {
+      echo "check: ${pat}"
+      mapfile -t files < <(rg -l "${pat}" "${OUT_DIR}" 2>/dev/null || true)
+      if [[ "${#files[@]}" -eq 0 ]]; then
+        echo "  result=PASS (no matches)"
+      else
+        ok="FAIL"
+        echo "  result=FAIL (matches in ${#files[@]} file(s))"
+        for f in "${files[@]}"; do
+          if [[ -f "${f}" ]]; then
+            fp="$(file_fingerprint "${f}")"
+            echo "  match_file=${fp}"
+          else
+            echo "  match_file=${f} (missing?)"
+          fi
+        done
+      fi
+      echo
+    } >> "${out_path}"
+  done
+
+  echo "${ok}"
+}
+
+check_web_dist_setoption() {
+  local out_path="${CMD_DIR}/web_dist_setoption_scan.txt"
+  local status="SKIP"
+  {
+    echo "web_dist_setoption_scan:"
+    if [[ -d "${ROOT}/web/dist" ]]; then
+      if command -v rg >/dev/null 2>&1; then
+        mapfile -t files < <(rg -l 'setOption\\(' "${ROOT}/web/dist" 2>/dev/null || true)
+        if [[ "${#files[@]}" -eq 0 ]]; then
+          status="PASS"
+          echo "result=PASS (no matches)"
+        else
+          status="FAIL"
+          echo "result=FAIL (matches in ${#files[@]} file(s))"
+          for f in "${files[@]}"; do
+            if [[ -f "${f}" ]]; then
+              fp="$(file_fingerprint "${f}")"
+              echo "match_file=${fp}"
+            else
+              echo "match_file=${f} (missing?)"
+            fi
+          done
+        fi
+      else
+        status="SKIP"
+        echo "rg: not found; SKIP"
+      fi
+    else
+      status="SKIP"
+      echo "web/dist missing; SKIP"
+    fi
+  } > "${out_path}"
+  echo "${status}" > "${CMD_DIR}/web_dist_setoption_scan.status"
+}
+
+auth_post_json_keys_only() {
+  # Usage: auth_post_json_keys_only <url> <json_body> <http_out> <keys_out>
+  local url="$1"
+  local json_body="$2"
+  local http_out="$3"
+  local keys_out="$4"
+
+  if [[ ! -f "${TOKEN_FILE}" ]]; then
+    echo "TOKEN_FILE_MISSING" > "${http_out}"
+    echo "SKIP (token file missing)" > "${keys_out}"
+    return 0
+  fi
+
+  local token tmp_body
+  token="$(tr -d '\r\n' < "${TOKEN_FILE}")"
+  tmp_body="$(mktemp)"
+  trap 'rm -f "${tmp_body}" 2>/dev/null || true' RETURN
+
+  local code
+  code="$(
+    curl -sS -o "${tmp_body}" -w '%{http_code}\n' -K - <<EOF 2>/dev/null || true
+url = "${url}"
+request = "POST"
+header = "Authorization: Bearer ${token}"
+header = "Content-Type: application/json"
+data = ${json_body}
+EOF
+  )"
+  printf '%s\n' "${code:-000}" > "${http_out}"
+
+  if python3 - "${tmp_body}" > "${keys_out}" 2>/dev/null <<'PY'
+import json,sys
+p=sys.argv[1]
+try:
+  with open(p,'r',encoding='utf-8') as f:
+    obj=json.load(f)
+except Exception as e:
+  print(f"SKIP (non-json body: {type(e).__name__})")
+  raise SystemExit(0)
+if isinstance(obj, dict):
+  for k in sorted(obj.keys()):
+    print(k)
+  if "error" in obj and isinstance(obj.get("error"), dict):
+    err=obj["error"]
+    if isinstance(err.get("code"), str): print("error.code="+err["code"])
+elif isinstance(obj, list):
+  print(f"list_len={len(obj)}")
+else:
+  print(f"SKIP (json type={type(obj).__name__})")
+PY
+  then
+    :
+  else
+    echo "SKIP (python3 failed)" > "${keys_out}"
+  fi
+
+  rm -f "${tmp_body}" 2>/dev/null || true
+  trap - RETURN
+}
+
+write_summary_and_reports() {
+  local summary_path="${OUT_DIR}/SUMMARY.txt"
+
+  local git_dirty_count git_worktree_clean
+  git_dirty_count="$(git status --porcelain=v1 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${git_dirty_count}" == "0" ]]; then
+    git_worktree_clean="PASS"
+  else
+    git_worktree_clean="FAIL"
+  fi
+
+  local unauth_code auth_code healthz_code ws_ticket_code
+  unauth_code="$(cat "${CMD_DIR}/curl_unauth_sessions.http" 2>/dev/null || echo "000")"
+  auth_code="$(cat "${CMD_DIR}/curl_auth_sessions.http" 2>/dev/null || echo "000")"
+  healthz_code="$(cat "${CMD_DIR}/curl_healthz.http" 2>/dev/null || echo "000")"
+  ws_ticket_code="$(cat "${CMD_DIR}/ws_ticket.http" 2>/dev/null || echo "000")"
+
+  local healthz_ok="FAIL"
+  if [[ "${healthz_code}" == "200" ]]; then
+    healthz_ok="PASS"
+  fi
+
+  local host_listen="FAIL"
+  local host_bind_mode="unknown"
+  # Primary signal: if /healthz responds 200, the host is reachable on localhost.
+  if [[ "${healthz_ok}" == "PASS" ]]; then
+    host_listen="PASS"
+    host_bind_mode="localhost"
+  fi
+  # Secondary signals (best-effort): listener inspection for bind mode.
+  if command -v ss >/dev/null 2>&1; then
+    if ss -lnt 2>/dev/null | rg -q "0\\.0\\.0\\.0:${PORT}\\b|:::${PORT}\\b|\\[::\\]:${PORT}\\b"; then
+      host_bind_mode="lan"
+    fi
+  fi
+
+  local unauth_ok="FAIL"
+  if [[ "${unauth_code}" == "401" || "${unauth_code}" == "403" ]]; then
+    unauth_ok="PASS"
+  fi
+
+  local auth_ok="FAIL"
+  if [[ "${auth_code}" == "200" ]]; then
+    auth_ok="PASS"
+  fi
+
+  local ws_auth_mode="bearer_header"
+  local ws_ticket_ok="FAIL"
+  if [[ "${ws_ticket_code}" == "200" ]]; then
+    # Confirm it at least returns a "ticket" key without recording values.
+    if [[ -f "${CMD_DIR}/ws_ticket.keys" ]] && rg -q '^ticket$' "${CMD_DIR}/ws_ticket.keys"; then
+      ws_ticket_ok="PASS"
+      ws_auth_mode="ticket"
+    else
+      ws_ticket_ok="FAIL"
+    fi
+  fi
+
+  local web_dist_present="SKIP"
+  if [[ -f "${ROOT}/web/dist/index.html" ]]; then
+    web_dist_present="PASS"
+  fi
+
+  local web_console_error_signature="SKIP"
+  if [[ -f "${CMD_DIR}/web_dist_setoption_scan.status" ]]; then
+    web_console_error_signature="$(cat "${CMD_DIR}/web_dist_setoption_scan.status" 2>/dev/null || echo "SKIP")"
+  fi
+
+  local ui_root_status="SKIP"
+  local ui_root_http="000"
+  local ui_root_ct=""
+  if [[ -f "${CMD_DIR}/ui_root_headers.txt" ]]; then
+    ui_root_http="$(rg '^HTTP/' "${CMD_DIR}/ui_root_headers.txt" | head -n 1 | awk '{print $2}' || echo "000")"
+    ui_root_ct="$(rg -i '^content-type:' "${CMD_DIR}/ui_root_headers.txt" | head -n 1 | cut -d: -f2- | tr -d '\r' | xargs || true)"
+  fi
+  if [[ "${ui_root_http}" == "200" ]] && echo "${ui_root_ct}" | rg -qi '^text/html\b'; then
+    ui_root_status="PASS"
+  else
+    # Only FAIL if we have a host and a web build that should be served at /.
+    if [[ "${healthz_ok}" == "PASS" && "${web_dist_present}" == "PASS" ]]; then
+      ui_root_status="FAIL"
+    fi
+  fi
+
+  local ui_deeplink_status="SKIP"
+  local ui_deeplink_http="000"
+  local ui_deeplink_ct=""
+  if [[ -f "${CMD_DIR}/ui_deeplink_headers.txt" ]]; then
+    ui_deeplink_http="$(rg '^HTTP/' "${CMD_DIR}/ui_deeplink_headers.txt" | head -n 1 | awk '{print $2}' || echo "000")"
+    ui_deeplink_ct="$(rg -i '^content-type:' "${CMD_DIR}/ui_deeplink_headers.txt" | head -n 1 | cut -d: -f2- | tr -d '\r' | xargs || true)"
+  fi
+  if [[ "${ui_deeplink_http}" == "200" ]] && echo "${ui_deeplink_ct}" | rg -qi '^text/html\b'; then
+    ui_deeplink_status="PASS"
+  else
+    if [[ "${healthz_ok}" == "PASS" && "${web_dist_present}" == "PASS" ]]; then
+      ui_deeplink_status="FAIL"
+    fi
+  fi
+
+  local tailscale_present="SKIP"
+  local tailscale_serve_configured="SKIP"
+  if command -v tailscale >/dev/null 2>&1; then
+    tailscale_present="PASS"
+    if [[ -f "${CMD_DIR}/tailscale_serve_status.txt" ]]; then
+      if rg -qi 'no serve config|not configured|serve is not enabled|serve: not configured' "${CMD_DIR}/tailscale_serve_status.txt"; then
+        tailscale_serve_configured="SKIP"
+      else
+        tailscale_serve_configured="PASS"
+      fi
+    fi
+  fi
+
+  local serve_rc_mapping_present="SKIP"
+  local serve_rc_mapping_mode="SKIP"
+  local serve_rc_mapping_https_port="SKIP"
+  local serve_rc_mapping_path="SKIP"
+  local state_file="${ROOT}/host/.run/serve-mode.json"
+  if [[ -f "${state_file}" && -f "${CMD_DIR}/tailscale_serve_status.json" ]]; then
+    serve_rc_mapping_mode="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("mode","SKIP"))' "${state_file}" 2>/dev/null || echo "SKIP")"
+    serve_rc_mapping_https_port="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("httpsPort","SKIP"))' "${state_file}" 2>/dev/null || echo "SKIP")"
+    serve_rc_mapping_path="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("path",""))' "${state_file}" 2>/dev/null || true)"
+    if [[ "${serve_rc_mapping_mode}" == "path" && -n "${serve_rc_mapping_path}" ]]; then
+      if python3 -c 'import json,sys; path=sys.argv[1]; fp=sys.argv[2]; obj=json.load(open(fp,"r",encoding="utf-8")); handlers={}; [handlers.update((site.get("Handlers") or {})) for site in (obj.get("Web") or {}).values()]; h=handlers.get(path); ok=isinstance(h,dict) and h.get("Proxy")=="http://127.0.0.1:8787"; sys.exit(0 if ok else 1)' "${serve_rc_mapping_path}" "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null
+      then
+        serve_rc_mapping_present="PASS"
+      else
+        serve_rc_mapping_present="FAIL"
+      fi
+    elif [[ "${serve_rc_mapping_mode}" == "port" && "${serve_rc_mapping_https_port}" != "SKIP" ]]; then
+      if python3 -c 'import json,sys; port=str(sys.argv[1]); fp=sys.argv[2]; obj=json.load(open(fp,"r",encoding="utf-8")); tcp=obj.get("TCP") or {}; web=obj.get("Web") or {}; tcp_ok = (port in tcp); handlers={}; [handlers.update((site.get("Handlers") or {})) for k,site in web.items() if k.endswith(":"+port)]; h=handlers.get("/"); web_ok=isinstance(h,dict) and h.get("Proxy")=="http://127.0.0.1:8787"; sys.exit(0 if (tcp_ok and web_ok) else 1)' "${serve_rc_mapping_https_port}" "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null
+      then
+        serve_rc_mapping_present="PASS"
+      else
+        serve_rc_mapping_present="FAIL"
+      fi
+    fi
+  fi
+
+  local android_scaffold_present="SKIP"
+  if [[ -x "${ROOT}/android/gradlew" ]] || [[ -f "${ROOT}/android/gradlew" ]]; then
+    if [[ -d "${ROOT}/android/app/src" ]] || [[ -d "${ROOT}/android/app/src/main" ]]; then
+      android_scaffold_present="PASS"
+    fi
+  fi
+
+  local codex_present="SKIP"
+  if command -v codex >/dev/null 2>&1; then
+    codex_present="PASS"
+  fi
+
+  local cursor_cmd_present="SKIP"
+  if command -v cursor >/dev/null 2>&1; then cursor_cmd_present="PASS"; fi
+  local cursor_agent_bin_present="SKIP"
+  if command -v cursor-agent >/dev/null 2>&1; then cursor_agent_bin_present="PASS"; fi
+  local agent_bin_present="SKIP"
+  if command -v agent >/dev/null 2>&1; then agent_bin_present="PASS"; fi
+
+  local cursor_ide_installed="SKIP"
+  if [[ "${cursor_cmd_present}" == "PASS" ]]; then
+    if [[ -f "${CMD_DIR}/cursor_version.txt" ]] && rg -q '^exit=0$' "${CMD_DIR}/cursor_version.txt"; then
+      if rg -qi 'no cursor ide installation found|cursor ide.*not.*found|no installation found' "${CMD_DIR}/cursor_version.txt"; then
+        cursor_ide_installed="FAIL"
+      else
+        cursor_ide_installed="PASS"
+      fi
+    else
+      cursor_ide_installed="FAIL"
+    fi
+  fi
+
+  local agent_streaming_capable="SKIP"
+  if [[ "${agent_bin_present}" == "PASS" ]] && [[ -f "${CMD_DIR}/agent_help_head.txt" ]]; then
+    if rg -qi 'output-format|stream-json' "${CMD_DIR}/agent_help_head.txt"; then
+      agent_streaming_capable="PASS"
+    else
+      agent_streaming_capable="FAIL"
+    fi
+  fi
+
+  local cursor_engine_entrypoint="none"
+  if [[ "${cursor_agent_bin_present}" == "PASS" ]]; then
+    cursor_engine_entrypoint="cursor-agent"
+  elif [[ "${agent_bin_present}" == "PASS" ]]; then
+    cursor_engine_entrypoint="agent"
+  elif [[ "${cursor_ide_installed}" == "PASS" ]]; then
+    if [[ -f "${CMD_DIR}/cursor_agent_subcommand_help_head.txt" ]] && rg -q '^exit=0$' "${CMD_DIR}/cursor_agent_subcommand_help_head.txt"; then
+      cursor_engine_entrypoint="cursor agent"
+    fi
+  fi
+
+  local redaction_status
+  redaction_status="$(cat "${CMD_DIR}/redaction_selfcheck.status" 2>/dev/null || echo "SKIP")"
+
+  local sessions_list_len="SKIP"
+  if [[ -f "${CMD_DIR}/curl_auth_sessions.keys" ]]; then
+    v="$(rg -o 'list_len=[0-9]+' "${CMD_DIR}/curl_auth_sessions.keys" | head -n 1 || true)"
+    if [[ -n "${v}" ]]; then
+      sessions_list_len="${v#list_len=}"
+    fi
+  fi
+
+  local api_create_codex_status="SKIP"
+  local api_create_codex_http="SKIP"
+  local api_create_codex_error_code="SKIP"
+  if [[ -f "${CMD_DIR}/api_create_codex.http" ]]; then
+    api_create_codex_http="$(cat "${CMD_DIR}/api_create_codex.http" 2>/dev/null || echo "SKIP")"
+    if [[ "${api_create_codex_http}" == "201" || "${api_create_codex_http}" == "200" ]]; then
+      api_create_codex_status="PASS"
+    elif [[ "${api_create_codex_http}" =~ ^4[0-9][0-9]$ ]]; then
+      if [[ -f "${CMD_DIR}/api_create_codex.keys" ]] && rg -q '^error$' "${CMD_DIR}/api_create_codex.keys"; then
+        api_create_codex_status="PASS_WITH_HINT"
+        api_create_codex_error_code="$(rg -o '^error\\.code=.*$' "${CMD_DIR}/api_create_codex.keys" | head -n 1 | cut -d= -f2- || echo "SKIP")"
+      else
+        api_create_codex_status="FAIL"
+      fi
+    else
+      api_create_codex_status="FAIL"
+    fi
+  fi
+
+  local e2e_ws_connect="SKIP"
+  local e2e_input_roundtrip="SKIP"
+  local e2e_output_marker="SKIP"
+  local e2e_exit_rc="SKIP"
+  if [[ -f "${CMD_DIR}/e2e_smoke_ws.txt" ]]; then
+    e2e_ws_connect="$(rg -n '^e2e_ws_connect=' "${CMD_DIR}/e2e_smoke_ws.txt" | head -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    e2e_input_roundtrip="$(rg -n '^e2e_input_roundtrip=' "${CMD_DIR}/e2e_smoke_ws.txt" | head -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    e2e_output_marker="$(rg -n '^e2e_output_marker=' "${CMD_DIR}/e2e_smoke_ws.txt" | head -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    e2e_exit_rc="$(rg -n '^exit=' "${CMD_DIR}/e2e_smoke_ws.txt" | tail -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    if [[ -z "${e2e_ws_connect}" ]]; then e2e_ws_connect="SKIP"; fi
+    if [[ -z "${e2e_input_roundtrip}" ]]; then e2e_input_roundtrip="SKIP"; fi
+    if [[ -z "${e2e_output_marker}" ]]; then e2e_output_marker="SKIP"; fi
+    if [[ -z "${e2e_exit_rc}" ]]; then e2e_exit_rc="SKIP"; fi
+    # If the script ran and failed, ensure we surface FAIL even if individual lines are missing.
+    if [[ "${e2e_exit_rc}" != "SKIP" && "${e2e_exit_rc}" != "0" ]]; then
+      if [[ "${e2e_ws_connect}" == "SKIP" ]]; then e2e_ws_connect="FAIL"; fi
+      if [[ "${e2e_input_roundtrip}" == "SKIP" ]]; then e2e_input_roundtrip="FAIL"; fi
+      if [[ "${e2e_output_marker}" == "SKIP" ]]; then e2e_output_marker="FAIL"; fi
+    fi
+  fi
+
+  local phase6_web_ui_detected="FAIL"
+  if [[ "${ui_root_status}" == "PASS" || "${web_dist_present}" == "PASS" || -d "${ROOT}/web" ]]; then
+    phase6_web_ui_detected="PASS"
+  fi
+  local phase7_android_detected="FAIL"
+  if [[ "${android_scaffold_present}" == "PASS" ]]; then
+    phase7_android_detected="PASS"
+  fi
+
+  local systemd_present="SKIP"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemd_present="PASS"
+  fi
+
+  local systemd_user_service_active="SKIP"
+  local systemd_user_service_enabled="SKIP"
+  local systemd_system_service_active="SKIP"
+  local systemd_system_service_enabled="SKIP"
+
+  if [[ "${systemd_present}" == "PASS" ]]; then
+    if systemctl --user is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_user_service_active="PASS"
+    else
+      systemd_user_service_active="FAIL"
+    fi
+    if systemctl --user is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_user_service_enabled="PASS"
+    else
+      systemd_user_service_enabled="FAIL"
+    fi
+
+    if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_system_service_active="PASS"
+    else
+      systemd_system_service_active="FAIL"
+    fi
+    if systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_system_service_enabled="PASS"
+    else
+      systemd_system_service_enabled="FAIL"
+    fi
+  fi
+
+  local systemd_service_active="SKIP"
+  local systemd_service_enabled="SKIP"
+  if [[ "${systemd_present}" == "PASS" ]]; then
+    if [[ "${systemd_user_service_active}" == "PASS" || "${systemd_system_service_active}" == "PASS" ]]; then
+      systemd_service_active="PASS"
+    else
+      systemd_service_active="FAIL"
+    fi
+    if [[ "${systemd_user_service_enabled}" == "PASS" || "${systemd_system_service_enabled}" == "PASS" ]]; then
+      systemd_service_enabled="PASS"
+    else
+      systemd_service_enabled="FAIL"
+    fi
+  fi
+
+  local go="NO-GO"
+  local e2e_required="false"
+  if [[ -f "${TOKEN_FILE}" && "${host_listen}" == "PASS" ]]; then
+    e2e_required="true"
+  fi
+  local e2e_gate_ok="PASS"
+  if [[ "${e2e_required}" == "true" ]]; then
+    if [[ "${e2e_ws_connect}" != "PASS" || "${e2e_input_roundtrip}" != "PASS" || "${e2e_output_marker}" != "PASS" ]]; then
+      e2e_gate_ok="FAIL"
+    fi
+  fi
+  if [[ "${host_listen}" == "PASS" && "${unauth_ok}" == "PASS" && "${auth_ok}" == "PASS" && "${healthz_ok}" == "PASS" && "${ws_ticket_ok}" == "PASS" && "${redaction_status}" == "PASS" && "${git_worktree_clean}" == "PASS" ]]; then
+    if [[ "${e2e_gate_ok}" != "PASS" ]]; then
+      go="NO-GO"
+    elif [[ "${web_console_error_signature}" == "FAIL" ]]; then
+      go="NO-GO"
+    elif [[ "${api_create_codex_status}" == "FAIL" ]]; then
+      go="NO-GO"
+    elif [[ "${systemd_present}" == "PASS" ]]; then
+      if [[ "${systemd_service_active}" == "PASS" && "${systemd_service_enabled}" == "PASS" ]]; then
+        go="GO"
+      fi
+    else
+      go="GO"
+    fi
+  fi
+
+  {
+    echo "${go}"
+    echo
+    printf 'host_listening_localhost=%s\n' "${host_listen}"
+    printf 'host_bind_mode=%s\n' "${host_bind_mode}"
+    printf 'unauth_sessions_401_403=%s (http=%s)\n' "${unauth_ok}" "${unauth_code}"
+    printf 'auth_sessions_200=%s (http=%s)\n' "${auth_ok}" "${auth_code}"
+    printf 'healthz_200=%s (http=%s)\n' "${healthz_ok}" "${healthz_code}"
+    printf 'ws_ticket_endpoint=%s (http=%s)\n' "${ws_ticket_ok}" "${ws_ticket_code}"
+    printf 'ws_auth_mode=%s\n' "${ws_auth_mode}"
+    printf 'ui_root_served=%s (http=%s content_type=%s)\n' "${ui_root_status}" "${ui_root_http}" "${ui_root_ct:-unknown}"
+    printf 'ui_deeplink_serves_index=%s (http=%s content_type=%s)\n' "${ui_deeplink_status}" "${ui_deeplink_http}" "${ui_deeplink_ct:-unknown}"
+    printf 'web_dist_present=%s\n' "${web_dist_present}"
+    printf 'web_console_error_signature=%s\n' "${web_console_error_signature}"
+    printf 'tailscale_present=%s\n' "${tailscale_present}"
+    printf 'tailscale_serve_configured=%s\n' "${tailscale_serve_configured}"
+    printf 'serve_rc_mapping_present=%s\n' "${serve_rc_mapping_present}"
+    printf 'serve_rc_mapping_mode=%s\n' "${serve_rc_mapping_mode}"
+    printf 'serve_rc_mapping_https_port=%s\n' "${serve_rc_mapping_https_port}"
+    if [[ -n "${serve_rc_mapping_path}" ]]; then
+      printf 'serve_rc_mapping_path=%s\n' "${serve_rc_mapping_path}"
+    fi
+    printf 'systemd_present=%s\n' "${systemd_present}"
+    printf 'systemd_service_active=%s\n' "${systemd_service_active}"
+    printf 'systemd_service_enabled=%s\n' "${systemd_service_enabled}"
+    printf 'systemd_user_service_active=%s\n' "${systemd_user_service_active}"
+    printf 'systemd_user_service_enabled=%s\n' "${systemd_user_service_enabled}"
+    printf 'systemd_system_service_active=%s\n' "${systemd_system_service_active}"
+    printf 'systemd_system_service_enabled=%s\n' "${systemd_system_service_enabled}"
+    printf 'android_scaffold_present=%s\n' "${android_scaffold_present}"
+    printf 'phase6_web_ui_detected=%s\n' "${phase6_web_ui_detected}"
+    printf 'phase7_android_detected=%s\n' "${phase7_android_detected}"
+    printf 'sessions_list_len=%s\n' "${sessions_list_len}"
+    printf 'api_create_codex_status=%s (http=%s code=%s)\n' "${api_create_codex_status}" "${api_create_codex_http}" "${api_create_codex_error_code}"
+    printf 'e2e_ws_connect=%s\n' "${e2e_ws_connect}"
+    printf 'e2e_input_roundtrip=%s\n' "${e2e_input_roundtrip}"
+    printf 'e2e_output_marker=%s\n' "${e2e_output_marker}"
+    printf 'codex_present=%s\n' "${codex_present}"
+    printf 'cursor_cmd_present=%s\n' "${cursor_cmd_present}"
+    printf 'cursor_ide_installed=%s\n' "${cursor_ide_installed}"
+    printf 'agent_bin_present=%s\n' "${agent_bin_present}"
+    printf 'cursor_agent_bin_present=%s\n' "${cursor_agent_bin_present}"
+    printf 'agent_streaming_capable=%s\n' "${agent_streaming_capable}"
+    printf 'cursor_engine_entrypoint=%s\n' "${cursor_engine_entrypoint}"
+    printf 'redaction_selfcheck=%s\n' "${redaction_status}"
+    printf 'git_worktree_clean=%s\n' "${git_worktree_clean}"
+    if [[ "${git_worktree_clean}" == "FAIL" ]]; then
+      printf 'git_dirty_item_count=%s\n' "${git_dirty_count}"
+      printf 'git_dirty_evidence_files=cmd/git_status_porcelain.txt cmd/git_diff_name_only.txt\n'
+    fi
+  } > "${summary_path}"
+
+  # REPORT.md: human narrative w/ explicit detected capabilities
+  {
+    echo "# Diagnostics Report (v7)"
+    echo
+    echo "- generated_at: ${TS}"
+    echo "- diag_dir: ${OUT_DIR}/"
+    echo "- diag_zip: ${ZIP_PATH}"
+    echo "- base_url: ${BASE_URL}"
+    echo "- git_head: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo
+    echo "## SUMMARY.txt"
+    echo
+    echo '```'
+    cat "${summary_path}" 2>/dev/null || true
+    echo '```'
+    echo
+    echo "## Detected capabilities"
+    echo
+    echo "- ws_auth_mode: ${ws_auth_mode}"
+    echo "- ui_root_served: ${ui_root_status}"
+    echo "- ui_deeplink_serves_index: ${ui_deeplink_status}"
+    echo "- tailscale_serve_configured: ${tailscale_serve_configured}"
+    echo "- systemd_service_active: ${systemd_service_active}"
+    echo "- systemd_service_enabled: ${systemd_service_enabled}"
+    echo "- android_scaffold_present: ${android_scaffold_present}"
+    echo "- phase6_web_ui_detected: ${phase6_web_ui_detected}"
+    echo "- phase7_android_detected: ${phase7_android_detected}"
+    echo "- sessions_list_len: ${sessions_list_len}"
+    echo "- web_console_error_signature: ${web_console_error_signature}"
+    echo "- api_create_codex_status: ${api_create_codex_status} (http=${api_create_codex_http} code=${api_create_codex_error_code})"
+    echo "- e2e_ws_connect: ${e2e_ws_connect}"
+    echo "- e2e_input_roundtrip: ${e2e_input_roundtrip}"
+    echo "- e2e_output_marker: ${e2e_output_marker}"
+    echo "- cursor_engine_entrypoint: ${cursor_engine_entrypoint}"
+    echo "- engines: codex=${codex_present}, cursor_cmd=${cursor_cmd_present}, cursor_ide=${cursor_ide_installed}, agent=${agent_bin_present}, cursor-agent=${cursor_agent_bin_present}"
+    echo
+    echo "## What was verified (checklist)"
+    echo
+    echo "- Host bind/listen checks: cmd/ss_listeners.txt (best-effort)"
+    echo "- REST auth behavior: /api/sessions (unauth + auth JSON shape only)"
+    echo "- Health endpoint: /healthz"
+    echo "- WS ticket endpoint: /api/ws-ticket (JSON shape only)"
+    echo "- E2E WS+input+output marker: cmd/e2e_smoke_ws.txt (no secrets)"
+    echo "- UI root: GET / (status + content-type only)"
+    echo "- UI deep link: GET /__rc_deeplink_test__/... (HTML-only headers)"
+    echo "- Web dist signature scan: cmd/web_dist_setoption_scan.txt"
+    echo "- Codex create-session check: cmd/api_create_codex.*"
+    echo "- UI deep link: GET /__rc_deeplink_test__/... (HTML-only headers)"
+    echo "- Tailscale Serve (best-effort): cmd/tailscale_serve_status.txt"
+    echo "- systemd service: cmd/systemctl_*.txt and cmd/journal_*.txt (best-effort)"
+    echo "- Android scaffold presence: filesystem checks only (build verification: SKIP)"
+    echo "- Engine presence: versions/help only (no PAYG APIs)"
+    echo "- Redaction self-check: cmd/redaction_selfcheck.txt"
+    echo
+    echo "## Repo phases"
+    echo
+    echo "- Phase 6 (Web UI): ${phase6_web_ui_detected} (derived from ui_root_served/web_dist/web/ presence)"
+    echo "- Phase 7 (Android): ${phase7_android_detected} (derived from android scaffold presence)"
+  } > "${OUT_DIR}/REPORT.md"
+
+  # STAFF_SUMMARY.md: short exec summary
+  {
+    echo "# cli-remote-control — Staff summary (v7)"
+    echo
+    echo "- generated_at: ${TS}"
+    echo "- diag_dir: ${OUT_DIR}/"
+    echo "- diag_zip: ${ZIP_PATH}"
+    echo "- git_head: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo
+    echo "## Gates"
+    echo
+    echo "- host_listening_localhost: ${host_listen}"
+    echo "- unauth_sessions_401_403: ${unauth_ok} (http=${unauth_code})"
+    echo "- auth_sessions_200: ${auth_ok} (http=${auth_code})"
+    echo "- healthz_200: ${healthz_ok} (http=${healthz_code})"
+    echo "- ws_ticket_endpoint: ${ws_ticket_ok} (http=${ws_ticket_code})"
+    echo "- redaction_selfcheck: ${redaction_status}"
+    echo "- git_worktree_clean: ${git_worktree_clean}"
+    echo
+    echo "## Capabilities"
+    echo
+    echo "- ws_auth_mode=${ws_auth_mode}"
+    echo "- ui_root_served=${ui_root_status} (http=${ui_root_http} content_type=${ui_root_ct:-unknown})"
+    echo "- ui_deeplink_serves_index=${ui_deeplink_status} (http=${ui_deeplink_http} content_type=${ui_deeplink_ct:-unknown})"
+    echo "- tailscale_serve_configured=${tailscale_serve_configured}"
+    echo "- android_scaffold_present=${android_scaffold_present}"
+    echo "- phase6_web_ui_detected=${phase6_web_ui_detected}"
+    echo "- phase7_android_detected=${phase7_android_detected}"
+    echo "- sessions_list_len=${sessions_list_len}"
+    echo "- web_console_error_signature=${web_console_error_signature}"
+    echo "- api_create_codex_status=${api_create_codex_status} (http=${api_create_codex_http} code=${api_create_codex_error_code})"
+    echo "- e2e_ws_connect=${e2e_ws_connect}"
+    echo "- e2e_input_roundtrip=${e2e_input_roundtrip}"
+    echo "- e2e_output_marker=${e2e_output_marker}"
+    echo "- cursor_engine_entrypoint=${cursor_engine_entrypoint}"
+    echo "- engines: codex=${codex_present}, cursor_cmd=${cursor_cmd_present}, cursor_ide=${cursor_ide_installed}, agent=${agent_bin_present}, cursor-agent=${cursor_agent_bin_present}"
+    echo
+    echo "## Notes"
+    echo
+    echo "- Secrets: no raw tokens/tickets are recorded; token file is fingerprinted only."
+  } > "${OUT_DIR}/STAFF_SUMMARY.md"
+}
+
+main() {
+  log "Writing bundle: ${OUT_DIR}/ and ${ZIP_PATH}"
+
+  # Git evidence
+  capture_cmd "git_status_porcelain.txt" git status --porcelain=v1
+  capture_shell "git_diff_name_only.txt" "echo '== unstaged =='; git diff --name-only; echo; echo '== staged =='; git diff --name-only --cached"
+  capture_cmd "git_log_last40.txt" git log --oneline -n 40
+
+  # Start host if possible, and capture safe token diagnostics.
+  maybe_start_host_bg
+  write_token_diagnostics
+  check_web_dist_setoption
+
+  # Host process/listeners
+  if command -v ss >/dev/null 2>&1; then
+    capture_cmd "ss_listeners.txt" ss -lntp
+  else
+    capture_cmd "ss_listeners.txt" sh -c 'echo "ss: not found"'
+  fi
+
+  # Host/UI checks (best-effort; do not record bodies beyond keys-only where applicable)
+  echo -n "$(safe_http_code "${BASE_URL}/healthz")" > "${CMD_DIR}/curl_healthz.http"
+  echo -n "$(safe_http_code "${BASE_URL}/api/sessions")" > "${CMD_DIR}/curl_unauth_sessions.http"
+
+  auth_request_keys_only "GET" "${BASE_URL}/api/sessions" "${CMD_DIR}/curl_auth_sessions.http" "${CMD_DIR}/curl_auth_sessions.keys"
+  auth_request_keys_only "POST" "${BASE_URL}/api/ws-ticket" "${CMD_DIR}/ws_ticket.http" "${CMD_DIR}/ws_ticket.keys"
+  auth_post_json_keys_only "${BASE_URL}/api/sessions" '{"engine":"codex","name":"__diag_codex__","workspacePath":"","prompt":"","mode":"","args":{}}' "${CMD_DIR}/api_create_codex.http" "${CMD_DIR}/api_create_codex.keys"
+
+  # E2E WS+input smoke (best-effort; never prints token/ticket)
+  if [[ -x "${ROOT}/scripts/e2e_smoke_ws.sh" ]]; then
+    capture_shell "e2e_smoke_ws.txt" "RC_BASE_URL='${BASE_URL}' RC_TOKEN_FILE='${TOKEN_FILE}' ${ROOT}/scripts/e2e_smoke_ws.sh"
+  else
+    echo "e2e=SKIP (missing scripts/e2e_smoke_ws.sh)" > "${CMD_DIR}/e2e_smoke_ws.txt"
+  fi
+
+  detect_ui_root_headers
+  detect_ui_deeplink_headers
+
+  # Tailscale Serve (best-effort)
+  tailscale_status_best_effort
+
+  # Systemd (best-effort)
+  capture_shell "systemctl_version.txt" "command -v systemctl >/dev/null 2>&1 && systemctl --version | head -n 2 || echo 'systemctl: not found'"
+  capture_shell "systemctl_user_status.txt" "systemctl --user --no-pager --full status ${SERVICE_NAME} || true"
+  capture_shell "systemctl_user_is_active.txt" "systemctl --user is-active ${SERVICE_NAME} || true"
+  capture_shell "systemctl_user_is_enabled.txt" "systemctl --user is-enabled ${SERVICE_NAME} || true"
+  capture_shell "journal_user_tail.txt" "journalctl --user -u ${SERVICE_NAME} -n 200 --no-pager --no-hostname || true"
+
+  capture_shell "systemctl_system_status.txt" "systemctl --no-pager --full status ${SERVICE_NAME} || true"
+  capture_shell "systemctl_system_is_active.txt" "systemctl is-active ${SERVICE_NAME} || true"
+  capture_shell "systemctl_system_is_enabled.txt" "systemctl is-enabled ${SERVICE_NAME} || true"
+  capture_shell "journal_system_tail.txt" "journalctl -u ${SERVICE_NAME} -n 200 --no-pager --no-hostname || true"
+
+  # Prereq capture (best-effort)
+  capture_shell "prereq_node_npm.txt" "if command -v node >/dev/null 2>&1; then node --version; else echo 'node: not found'; fi; if command -v npm >/dev/null 2>&1; then npm --version; else echo 'npm: not found'; fi"
+  capture_shell "prereq_tailscale_status.txt" "if command -v tailscale >/dev/null 2>&1; then tailscale status | head -n 80; else echo 'tailscale: not found'; fi"
+  capture_shell "prereq_go_build_host.txt" "cd host && go build ./cmd/rc-host"
+
+  # Android presence
+  capture_shell "android_presence.txt" "if [[ -f android/gradlew || -x android/gradlew ]]; then echo 'android_gradlew=true'; else echo 'android_gradlew=false'; fi; if [[ -d android/app/src ]]; then echo 'android_app_src=true'; else echo 'android_app_src=false'; fi"
+
+  # Engines (versions/help only; clear PAYG-style keys for subprocesses)
+  capture_shell "which_cursor.txt" "command -v cursor || true"
+  capture_shell "which_agent.txt" "command -v agent || true"
+  capture_shell "which_cursor_agent.txt" "command -v cursor-agent || true"
+
+  capture_shell "codex_version.txt" "if command -v codex >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY codex --version; else echo 'codex: not found'; fi"
+  capture_shell "codex_app_server_help.txt" "if command -v codex >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY codex app-server --help | head -n 120; else echo 'codex: not found'; fi"
+
+  capture_shell "cursor_version.txt" "if command -v cursor >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY cursor --version; else echo 'cursor: not found'; fi"
+  capture_shell "cursor_agent_subcommand_help_head.txt" "if command -v cursor >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY cursor agent --help | head -n 120; else echo 'cursor: not found'; fi"
+  capture_shell "agent_help_head.txt" "if command -v agent >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY agent --help | head -n 120; else echo 'agent: not found'; fi"
+  capture_shell "cursor_agent_help_head.txt" "if command -v cursor-agent >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY cursor-agent --help | head -n 120; else echo 'cursor-agent: not found'; fi"
+
+  # Code pointers
+  write_code_pointers
+
+  # Redaction self-check (must happen before summary/report)
+  selfcheck_status="$(redaction_selfcheck)"
+  echo "${selfcheck_status}" > "${CMD_DIR}/redaction_selfcheck.status"
+
+  write_summary_and_reports
+  write_manifest
+  zip_bundle
+
+  log "done: ${OUT_DIR}/ (zip=${ZIP_PATH})"
+  echo "diag_dir=${OUT_DIR}"
+  echo "diag_zip=${ZIP_PATH}"
+}
+
+main "$@"
