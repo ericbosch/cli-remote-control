@@ -153,13 +153,13 @@ try:
 except Exception as e:
   print(f"SKIP (non-json body: {type(e).__name__})")
   raise SystemExit(0)
-	if isinstance(obj, dict):
-	  for k in sorted(obj.keys()):
-	    print(k)
-	elif isinstance(obj, list):
-	  print(f"list_len={len(obj)}")
-	else:
-	  print(f"SKIP (json type={type(obj).__name__})")
+if isinstance(obj, dict):
+  for k in sorted(obj.keys()):
+    print(k)
+elif isinstance(obj, list):
+  print(f"list_len={len(obj)}")
+else:
+  print(f"SKIP (json type={type(obj).__name__})")
 PY
   then
     :
