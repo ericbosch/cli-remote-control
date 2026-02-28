@@ -20,8 +20,7 @@ class RcApiClient(
 
     private fun requestBuilder(path: String): Request.Builder {
         val base = baseUrl()
-        val url = (base + path).toHttpUrlOrNull()
-            ?: throw IllegalStateException("Invalid base URL")
+        val url = (base + path).toHttpUrlOrNull() ?: throw IllegalStateException("Invalid base URL")
         val b = Request.Builder().url(url)
         val t = token()
         if (t.isNotEmpty()) b.header("Authorization", if (t.startsWith("Bearer ")) t else "Bearer $t")
@@ -29,30 +28,48 @@ class RcApiClient(
     }
 
     suspend fun listSessions(): Result<List<SessionInfo>> = withContext(Dispatchers.IO) {
-        val req = requestBuilder("/api/sessions").get().build()
-        httpCall(req) { body ->
-            val list = json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(SessionInfo.serializer()), body)
-            Result.success(list)
-        }
+        runCatching {
+            val req = requestBuilder("/api/sessions").get().build()
+            httpCall(req) { body ->
+                val list = json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(SessionInfo.serializer()), body)
+                Result.success(list)
+            }
+        }.getOrElse { Result.failure(it) }
     }
 
     suspend fun createSession(reqBody: CreateSessionRequest): Result<SessionInfo> = withContext(Dispatchers.IO) {
-        val media = "application/json".toMediaType()
-        val payload = json.encodeToString(CreateSessionRequest.serializer(), reqBody).toRequestBody(media)
-        val req = requestBuilder("/api/sessions").post(payload).build()
-        httpCall(req) { body ->
-            val info = json.decodeFromString(SessionInfo.serializer(), body)
-            Result.success(info)
-        }
+        runCatching {
+            val media = "application/json".toMediaType()
+            val payload = json.encodeToString(CreateSessionRequest.serializer(), reqBody).toRequestBody(media)
+            val req = requestBuilder("/api/sessions").post(payload).build()
+            httpCall(req) { body ->
+                val info = json.decodeFromString(SessionInfo.serializer(), body)
+                Result.success(info)
+            }
+        }.getOrElse { Result.failure(it) }
     }
 
     suspend fun issueWsTicket(): Result<String> = withContext(Dispatchers.IO) {
-        val req = requestBuilder("/api/ws-ticket").post("{}".toRequestBody("application/json".toMediaType())).build()
-        httpCall(req) { body ->
-            val obj = json.decodeFromString(WsTicketResponse.serializer(), body)
-            val ticket = obj.ticket?.trim().orEmpty()
-            if (ticket.isEmpty()) Result.failure(IllegalStateException("Missing ws ticket")) else Result.success(ticket)
-        }
+        runCatching {
+            val req = requestBuilder("/api/ws-ticket").post("{}".toRequestBody("application/json".toMediaType())).build()
+            httpCall(req) { body ->
+                val obj = json.decodeFromString(WsTicketResponse.serializer(), body)
+                val ticket = obj.ticket?.trim().orEmpty()
+                if (ticket.isEmpty()) Result.failure(IllegalStateException("Missing ws ticket")) else Result.success(ticket)
+            }
+        }.getOrElse { Result.failure(it) }
+    }
+
+    suspend fun healthz(): Result<Boolean> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = run {
+                val base = baseUrl()
+                val url = (base + "/healthz").toHttpUrlOrNull() ?: throw IllegalStateException("Invalid base URL")
+                Request.Builder().url(url).get().build()
+            }
+            val res = http.newCall(req).execute()
+            res.use { Result.success(it.isSuccessful) }
+        }.getOrElse { Result.failure(it) }
     }
 
     private inline fun <T> httpCall(request: Request, decode: (String) -> Result<T>): Result<T> {
@@ -63,7 +80,13 @@ class RcApiClient(
         }
         res.use {
             val body = it.body?.string().orEmpty()
-            if (it.isSuccessful) return decode(body)
+            if (it.isSuccessful) {
+                return try {
+                    decode(body)
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+            }
 
             // Prefer structured API errors (no secrets expected).
             val parsed = runCatching { json.decodeFromString(ApiErrorEnvelope.serializer(), body) }.getOrNull()

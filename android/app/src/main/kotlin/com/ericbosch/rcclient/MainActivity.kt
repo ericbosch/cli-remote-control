@@ -18,6 +18,7 @@ import com.ericbosch.rcclient.api.RcApiClient
 import com.ericbosch.rcclient.di.Deps
 import com.ericbosch.rcclient.di.LocalDeps
 import com.ericbosch.rcclient.ui.screens.HomeScreen
+import com.ericbosch.rcclient.ui.screens.SetupScreen
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 
@@ -39,12 +40,17 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalDeps provides deps) {
                         val navController = rememberNavController()
-                        val start = if (Preferences.getToken().isNotEmpty()) "home" else "settings"
+                        val start = if (Preferences.getToken().isNotEmpty() && Preferences.getBaseUrl().isNotEmpty() && Preferences.isConfigOk()) "home" else "setup"
                         val windowSize = calculateWindowSizeClass(this@MainActivity)
                         NavHost(
                             navController = navController,
                             startDestination = start
                         ) {
+                            composable("setup") {
+                                SetupScreen(
+                                    onContinue = { navController.navigate("home") { popUpTo(0) } }
+                                )
+                            }
                             composable("settings") {
                                 SettingsScreen(
                                     onSaved = { navController.navigate("home") { popUpTo(0) } }
