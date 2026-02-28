@@ -408,9 +408,11 @@ write_summary_and_reports() {
       if rg -qi 'no serve config|not configured|serve is not enabled|serve: not configured' "${CMD_DIR}/tailscale_serve_status.txt"; then
         tailscale_serve_configured="SKIP"
       else
-        # Best-effort: treat any non-empty status output as "configured".
-        if rg -q '.' "${CMD_DIR}/tailscale_serve_status.txt"; then
+        # PASS only when it looks like Serve is actually proxying to a local backend.
+        if rg -qi 'http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?' "${CMD_DIR}/tailscale_serve_status.txt"; then
           tailscale_serve_configured="PASS"
+        else
+          tailscale_serve_configured="SKIP"
         fi
       fi
     fi
