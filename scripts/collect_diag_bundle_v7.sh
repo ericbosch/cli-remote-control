@@ -66,6 +66,22 @@ capture_shell() {
   } 2>&1 | redact_stream > "${out_path}"
 }
 
+capture_android_logcat_best_effort() {
+  if ! command -v adb >/dev/null 2>&1; then
+    echo "adb: not found" > "${CMD_DIR}/android_logcat.txt"
+    return 0
+  fi
+  if ! adb get-state >/dev/null 2>&1; then
+    echo "adb: no device" > "${CMD_DIR}/android_logcat.txt"
+    return 0
+  fi
+  if [[ -x "${ROOT}/scripts/android_logcat_capture.sh" ]]; then
+    "${ROOT}/scripts/android_logcat_capture.sh" "${CMD_DIR}/android_logcat.txt" >/dev/null 2>&1 || true
+  else
+    echo "scripts/android_logcat_capture.sh missing" > "${CMD_DIR}/android_logcat.txt"
+  fi
+}
+
 safe_http_code() {
   local code
   code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 5 "$1" 2>/dev/null || true)"
@@ -975,6 +991,9 @@ main() {
 
   detect_ui_root_headers
   detect_ui_deeplink_headers
+
+  # Android logcat (best-effort; only if adb device is attached)
+  capture_android_logcat_best_effort
 
   # Tailscale Serve (best-effort)
   tailscale_status_best_effort
