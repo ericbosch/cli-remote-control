@@ -37,6 +37,16 @@
   - An `https://...` page cannot fetch `http://...` URLs.
   - If you open the UI on your phone and Base URL is `http://127.0.0.1:8787`, that points to the phone (wrong host) and will fail.
 
+## Mobile: “New session” opens a blank page
+
+- This is usually either a **client crash** or a **missing SPA deep-link fallback**.
+- Verify deep-link serving on the host:
+  - `curl -sS -H 'Accept: text/html' -o /dev/null -w '%{http_code} %{content_type}\n' http://127.0.0.1:8787/__rc_deeplink_test__/sessions/abc`
+  - Expected: `200 text/html...`
+- If it still happens:
+  - Refresh once (cached JS).
+  - Run `./scripts/collect_diag_bundle_v6.sh` and check `ui_deeplink_serves_index=PASS`.
+
 ## Android: can’t connect to host
 
 - **Preferred (secure):** Use Tailscale Serve URL (HTTPS) and keep host bound to `127.0.0.1`.

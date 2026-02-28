@@ -199,6 +199,33 @@ detect_ui_root_headers() {
   trap - RETURN
 }
 
+detect_ui_deeplink_headers() {
+  local out_path="${CMD_DIR}/ui_deeplink_headers.txt"
+  local hdr_tmp
+  hdr_tmp="$(mktemp)"
+  trap 'rm -f "${hdr_tmp}" 2>/dev/null || true' RETURN
+
+  # Capture headers only; no body. Use Accept:text/html to simulate a browser navigation.
+  set +e
+  curl -sS -H "Accept: text/html" -D "${hdr_tmp}" -o /dev/null --connect-timeout 2 --max-time 5 "${BASE_URL}/__rc_deeplink_test__/sessions/abc" 2>/dev/null
+  local rc=$?
+  set -e
+
+  {
+    echo "\$ curl -sS -H 'Accept: text/html' -D <file> ${BASE_URL}/__rc_deeplink_test__/sessions/abc -o /dev/null"
+    echo "exit=${rc}"
+    echo
+    if [[ -s "${hdr_tmp}" ]]; then
+      cat "${hdr_tmp}" | redact_stream
+    else
+      echo "(no headers captured)"
+    fi
+  } > "${out_path}"
+
+  rm -f "${hdr_tmp}" 2>/dev/null || true
+  trap - RETURN
+}
+
 tailscale_status_best_effort() {
   if ! command -v tailscale >/dev/null 2>&1; then
     echo "tailscale: not found" > "${CMD_DIR}/tailscale_version.txt"
@@ -411,6 +438,21 @@ write_summary_and_reports() {
     # Only FAIL if we have a host and a web build that should be served at /.
     if [[ "${healthz_ok}" == "PASS" && "${web_dist_present}" == "PASS" ]]; then
       ui_root_status="FAIL"
+    fi
+  fi
+
+  local ui_deeplink_status="SKIP"
+  local ui_deeplink_http="000"
+  local ui_deeplink_ct=""
+  if [[ -f "${CMD_DIR}/ui_deeplink_headers.txt" ]]; then
+    ui_deeplink_http="$(rg '^HTTP/' "${CMD_DIR}/ui_deeplink_headers.txt" | head -n 1 | awk '{print $2}' || echo "000")"
+    ui_deeplink_ct="$(rg -i '^content-type:' "${CMD_DIR}/ui_deeplink_headers.txt" | head -n 1 | cut -d: -f2- | tr -d '\r' | xargs || true)"
+  fi
+  if [[ "${ui_deeplink_http}" == "200" ]] && echo "${ui_deeplink_ct}" | rg -qi '^text/html\b'; then
+    ui_deeplink_status="PASS"
+  else
+    if [[ "${healthz_ok}" == "PASS" && "${web_dist_present}" == "PASS" ]]; then
+      ui_deeplink_status="FAIL"
     fi
   fi
 
@@ -629,6 +671,7 @@ write_summary_and_reports() {
     printf 'ws_ticket_endpoint=%s (http=%s)\n' "${ws_ticket_ok}" "${ws_ticket_code}"
     printf 'ws_auth_mode=%s\n' "${ws_auth_mode}"
     printf 'ui_root_served=%s (http=%s content_type=%s)\n' "${ui_root_status}" "${ui_root_http}" "${ui_root_ct:-unknown}"
+    printf 'ui_deeplink_serves_index=%s (http=%s content_type=%s)\n' "${ui_deeplink_status}" "${ui_deeplink_http}" "${ui_deeplink_ct:-unknown}"
     printf 'web_dist_present=%s\n' "${web_dist_present}"
     printf 'tailscale_present=%s\n' "${tailscale_present}"
     printf 'tailscale_serve_configured=%s\n' "${tailscale_serve_configured}"
@@ -687,6 +730,7 @@ write_summary_and_reports() {
     echo
     echo "- ws_auth_mode: ${ws_auth_mode}"
     echo "- ui_root_served: ${ui_root_status}"
+    echo "- ui_deeplink_serves_index: ${ui_deeplink_status}"
     echo "- tailscale_serve_configured: ${tailscale_serve_configured}"
     echo "- systemd_service_active: ${systemd_service_active}"
     echo "- systemd_service_enabled: ${systemd_service_enabled}"
@@ -708,6 +752,7 @@ write_summary_and_reports() {
     echo "- WS ticket endpoint: /api/ws-ticket (JSON shape only)"
     echo "- E2E WS+input+output marker: cmd/e2e_smoke_ws.txt (no secrets)"
     echo "- UI root: GET / (status + content-type only)"
+    echo "- UI deep link: GET /__rc_deeplink_test__/... (HTML-only headers)"
     echo "- Tailscale Serve (best-effort): cmd/tailscale_serve_status.txt"
     echo "- systemd service: cmd/systemctl_*.txt and cmd/journal_*.txt (best-effort)"
     echo "- Android scaffold presence: filesystem checks only (build verification: SKIP)"
@@ -743,6 +788,7 @@ write_summary_and_reports() {
     echo
     echo "- ws_auth_mode=${ws_auth_mode}"
     echo "- ui_root_served=${ui_root_status} (http=${ui_root_http} content_type=${ui_root_ct:-unknown})"
+    echo "- ui_deeplink_serves_index=${ui_deeplink_status} (http=${ui_deeplink_http} content_type=${ui_deeplink_ct:-unknown})"
     echo "- tailscale_serve_configured=${tailscale_serve_configured}"
     echo "- android_scaffold_present=${android_scaffold_present}"
     echo "- phase6_web_ui_detected=${phase6_web_ui_detected}"
@@ -794,6 +840,7 @@ main() {
   fi
 
   detect_ui_root_headers
+  detect_ui_deeplink_headers
 
   # Tailscale Serve (best-effort)
   tailscale_status_best_effort
