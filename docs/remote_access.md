@@ -39,3 +39,19 @@ On your phone (e.g. Termux):
 Then open on the phone:
 
 - `http://127.0.0.1:8787`
+
+## Optional: LAN exposure (opt-in, allowlist)
+
+Prefer Tailscale Serve. If you intentionally want direct LAN access:
+
+- Enable: `./scripts/expose_lan.sh`
+  - Adds a `ufw` allow rule from your detected LAN CIDR → `tcp/8787`
+  - Restarts the host bound to `0.0.0.0:8787`
+- Disable: `./scripts/unexpose_lan.sh`
+  - Removes the `ufw` rule(s) added by the script
+  - Restarts the host bound back to `127.0.0.1:8787`
+
+Warnings:
+
+- This exposes the service to devices on your LAN. Use only on trusted networks.
+- Keep the Bearer token private; never paste it into logs/issues.

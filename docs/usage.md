@@ -51,7 +51,10 @@ See `docs/remote_access.md` and use:
 - `./scripts/unexpose_tailscale.sh`
 
 ## Optional: LAN exposure (opt-in)
-See `docs/remote_access.md`.
+See `docs/remote_access.md`:
+
+- `./scripts/expose_lan.sh`
+- `./scripts/unexpose_lan.sh`
 
 ## Getting the token
 

@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟡 Yellow — Remote access (Tailscale scripts) in progress; core UI + ws-ticket are green
+**Banner:** 🟡 Yellow — Phase 1 complete (Tailscale Serve); Phase 2 optional LAN exposure added (requires sudo/ufw)
 
-**Current milestone:** Phase 1 — Tailscale-first remote access
+**Current milestone:** Closeout — keep gates green
 
 ## Checklist
 
