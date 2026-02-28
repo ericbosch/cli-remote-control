@@ -182,8 +182,9 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
         }
       }
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         wsRef.current = null
+        writeLine(`\r\n[ws ${formatTS(Date.now())}] closed (code=${ev.code}${ev.reason ? ` reason=${ev.reason}` : ''})\r\n`)
         if (!shouldReconnectRef.current) return
         if (closedRef.current) return
         const delay = WS_RECONNECT_DELAYS[Math.min(reconnectAttempt.current, WS_RECONNECT_DELAYS.length - 1)]
@@ -192,7 +193,9 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
         setTimeout(() => void connect(), delay)
       }
 
-      ws.onerror = () => {}
+      ws.onerror = () => {
+        writeLine(`\r\n[ws ${formatTS(Date.now())}] error\r\n`)
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to connect'
       writeLine(`\r\n[error ${formatTS(Date.now())}] ${msg}\r\n`)

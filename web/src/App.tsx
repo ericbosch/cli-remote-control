@@ -32,7 +32,8 @@ export default function App() {
   const [workspacePath, setWorkspacePath] = useState('')
   const [prompt, setPrompt] = useState('')
   const [mode, setMode] = useState<'structured' | 'pty'>('pty')
-  const [engine, setEngine] = useState<'shell' | 'codex' | 'cursor'>('cursor')
+  // Default to shell for responsiveness (cursor engines may require separate auth/login).
+  const [engine, setEngine] = useState<'shell' | 'codex' | 'cursor'>('shell')
   const [name, setName] = useState('')
 
   const loadSessions = useCallback(async () => {
