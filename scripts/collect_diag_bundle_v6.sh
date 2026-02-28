@@ -22,6 +22,7 @@ mkdir -p "${CMD_DIR}" "${CODE_DIR}"
 PORT="${RC_HOST_PORT:-8787}"
 BASE_URL="http://127.0.0.1:${PORT}"
 TOKEN_FILE="${ROOT}/host/.dev-token"
+SERVICE_NAME="cli-remote-control.service"
 
 log() { printf '%s %s\n' "$(date -Is)" "$*" >&2; }
 
@@ -494,9 +495,64 @@ write_summary_and_reports() {
     phase7_android_detected="PASS"
   fi
 
+  local systemd_present="SKIP"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemd_present="PASS"
+  fi
+
+  local systemd_user_service_active="SKIP"
+  local systemd_user_service_enabled="SKIP"
+  local systemd_system_service_active="SKIP"
+  local systemd_system_service_enabled="SKIP"
+
+  if [[ "${systemd_present}" == "PASS" ]]; then
+    if systemctl --user is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_user_service_active="PASS"
+    else
+      systemd_user_service_active="FAIL"
+    fi
+    if systemctl --user is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_user_service_enabled="PASS"
+    else
+      systemd_user_service_enabled="FAIL"
+    fi
+
+    if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_system_service_active="PASS"
+    else
+      systemd_system_service_active="FAIL"
+    fi
+    if systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      systemd_system_service_enabled="PASS"
+    else
+      systemd_system_service_enabled="FAIL"
+    fi
+  fi
+
+  local systemd_service_active="SKIP"
+  local systemd_service_enabled="SKIP"
+  if [[ "${systemd_present}" == "PASS" ]]; then
+    if [[ "${systemd_user_service_active}" == "PASS" || "${systemd_system_service_active}" == "PASS" ]]; then
+      systemd_service_active="PASS"
+    else
+      systemd_service_active="FAIL"
+    fi
+    if [[ "${systemd_user_service_enabled}" == "PASS" || "${systemd_system_service_enabled}" == "PASS" ]]; then
+      systemd_service_enabled="PASS"
+    else
+      systemd_service_enabled="FAIL"
+    fi
+  fi
+
   local go="NO-GO"
   if [[ "${host_listen}" == "PASS" && "${unauth_ok}" == "PASS" && "${auth_ok}" == "PASS" && "${healthz_ok}" == "PASS" && "${ws_ticket_ok}" == "PASS" && "${redaction_status}" == "PASS" && "${git_worktree_clean}" == "PASS" ]]; then
-    go="GO"
+    if [[ "${systemd_present}" == "PASS" ]]; then
+      if [[ "${systemd_service_active}" == "PASS" && "${systemd_service_enabled}" == "PASS" ]]; then
+        go="GO"
+      fi
+    else
+      go="GO"
+    fi
   fi
 
   {
@@ -513,6 +569,13 @@ write_summary_and_reports() {
     printf 'web_dist_present=%s\n' "${web_dist_present}"
     printf 'tailscale_present=%s\n' "${tailscale_present}"
     printf 'tailscale_serve_configured=%s\n' "${tailscale_serve_configured}"
+    printf 'systemd_present=%s\n' "${systemd_present}"
+    printf 'systemd_service_active=%s\n' "${systemd_service_active}"
+    printf 'systemd_service_enabled=%s\n' "${systemd_service_enabled}"
+    printf 'systemd_user_service_active=%s\n' "${systemd_user_service_active}"
+    printf 'systemd_user_service_enabled=%s\n' "${systemd_user_service_enabled}"
+    printf 'systemd_system_service_active=%s\n' "${systemd_system_service_active}"
+    printf 'systemd_system_service_enabled=%s\n' "${systemd_system_service_enabled}"
     printf 'android_scaffold_present=%s\n' "${android_scaffold_present}"
     printf 'phase6_web_ui_detected=%s\n' "${phase6_web_ui_detected}"
     printf 'phase7_android_detected=%s\n' "${phase7_android_detected}"
@@ -553,6 +616,8 @@ write_summary_and_reports() {
     echo "- ws_auth_mode: ${ws_auth_mode}"
     echo "- ui_root_served: ${ui_root_status}"
     echo "- tailscale_serve_configured: ${tailscale_serve_configured}"
+    echo "- systemd_service_active: ${systemd_service_active}"
+    echo "- systemd_service_enabled: ${systemd_service_enabled}"
     echo "- android_scaffold_present: ${android_scaffold_present}"
     echo "- phase6_web_ui_detected: ${phase6_web_ui_detected}"
     echo "- phase7_android_detected: ${phase7_android_detected}"
@@ -568,6 +633,7 @@ write_summary_and_reports() {
     echo "- WS ticket endpoint: /api/ws-ticket (JSON shape only)"
     echo "- UI root: GET / (status + content-type only)"
     echo "- Tailscale Serve (best-effort): cmd/tailscale_serve_status.txt"
+    echo "- systemd service: cmd/systemctl_*.txt and cmd/journal_*.txt (best-effort)"
     echo "- Android scaffold presence: filesystem checks only (build verification: SKIP)"
     echo "- Engine presence: versions/help only (no PAYG APIs)"
     echo "- Redaction self-check: cmd/redaction_selfcheck.txt"
@@ -645,6 +711,23 @@ main() {
 
   # Tailscale Serve (best-effort)
   tailscale_status_best_effort
+
+  # Systemd (best-effort)
+  capture_shell "systemctl_version.txt" "command -v systemctl >/dev/null 2>&1 && systemctl --version | head -n 2 || echo 'systemctl: not found'"
+  capture_shell "systemctl_user_status.txt" "systemctl --user --no-pager --full status ${SERVICE_NAME} || true"
+  capture_shell "systemctl_user_is_active.txt" "systemctl --user is-active ${SERVICE_NAME} || true"
+  capture_shell "systemctl_user_is_enabled.txt" "systemctl --user is-enabled ${SERVICE_NAME} || true"
+  capture_shell "journal_user_tail.txt" "journalctl --user -u ${SERVICE_NAME} -n 200 --no-pager --no-hostname || true"
+
+  capture_shell "systemctl_system_status.txt" "systemctl --no-pager --full status ${SERVICE_NAME} || true"
+  capture_shell "systemctl_system_is_active.txt" "systemctl is-active ${SERVICE_NAME} || true"
+  capture_shell "systemctl_system_is_enabled.txt" "systemctl is-enabled ${SERVICE_NAME} || true"
+  capture_shell "journal_system_tail.txt" "journalctl -u ${SERVICE_NAME} -n 200 --no-pager --no-hostname || true"
+
+  # Prereq capture (best-effort)
+  capture_shell "prereq_node_npm.txt" "if command -v node >/dev/null 2>&1; then node --version; else echo 'node: not found'; fi; if command -v npm >/dev/null 2>&1; then npm --version; else echo 'npm: not found'; fi"
+  capture_shell "prereq_tailscale_status.txt" "if command -v tailscale >/dev/null 2>&1; then tailscale status | head -n 80; else echo 'tailscale: not found'; fi"
+  capture_shell "prereq_go_build_host.txt" "cd host && go build ./cmd/rc-host"
 
   # Android presence
   capture_shell "android_presence.txt" "if [[ -f android/gradlew || -x android/gradlew ]]; then echo 'android_gradlew=true'; else echo 'android_gradlew=false'; fi; if [[ -d android/app/src ]]; then echo 'android_app_src=true'; else echo 'android_app_src=false'; fi"
