@@ -43,10 +43,19 @@ Then on the phone browser:
 - Prod UI: `http://127.0.0.1:8787`
 - Dev UI: `http://127.0.0.1:5173` (API base URL should be `http://127.0.0.1:8787`)
 
+## Remote access via Tailscale (recommended)
+
+See `docs/remote_access.md` and use:
+
+- `./scripts/expose_tailscale.sh`
+- `./scripts/unexpose_tailscale.sh`
+
+## Optional: LAN exposure (opt-in)
+See `docs/remote_access.md`.
+
 ## Getting the token
 
 The host writes a dev token to `host/.dev-token` when started with `--generate-dev-token`.
 
 - Use the token value in the UI settings (Bearer prefix optional).
 - Never paste the token into logs/issues; diagnostics only record path + length + sha256.
-

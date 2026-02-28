@@ -10,7 +10,9 @@ RUN_DIR="${ROOT}/host/.run"
 PID_FILE="${RUN_DIR}/rc-host.pid"
 LOG_FILE="${RUN_DIR}/rc-host.log"
 TMUX_SESSION="rc-host"
-BASE_URL="http://127.0.0.1:8787"
+BIND="${RC_HOST_BIND:-127.0.0.1}"
+PORT="${RC_HOST_PORT:-8787}"
+BASE_URL="http://127.0.0.1:${PORT}"
 TOKEN_FILE="${ROOT}/host/.dev-token"
 
 http_code() {

@@ -21,10 +21,17 @@ chmod 0700 "${RUN_DIR}" 2>/dev/null || true
 LOG_FILE="${RUN_DIR}/rc-host.log"
 PID_FILE="${RUN_DIR}/rc-host.pid"
 TMUX_SESSION="rc-host"
-BASE_URL="http://127.0.0.1:8787"
 TOKEN_FILE="${ROOT}/host/.dev-token"
 
 log() { printf '%s %s\n' "$(date -Is)" "$*" >&2; }
+
+BIND="${RC_HOST_BIND:-127.0.0.1}"
+PORT="${RC_HOST_PORT:-8787}"
+WEB_DIR="${RC_HOST_WEB_DIR:-}"
+if [[ -z "${WEB_DIR}" ]] && [[ -f "${ROOT}/web/dist/index.html" ]]; then
+  WEB_DIR="${ROOT}/web/dist"
+fi
+BASE_URL="http://127.0.0.1:${PORT}"
 
 http_code() {
   local code
@@ -92,7 +99,11 @@ wait_ready_or_dump_logs() {
 start_tmux() {
   log "starting via tmux session: ${TMUX_SESSION}"
   rm -f "${LOG_FILE}" "${PID_FILE}" 2>/dev/null || true
-  if ! tmux new-session -d -s "${TMUX_SESSION}" "cd \"${ROOT}/host\" && exec go run ./cmd/rc-host serve --generate-dev-token --log-dir \"${ROOT}/logs\""; then
+  local web_flag=""
+  if [[ -n "${WEB_DIR}" ]]; then
+    web_flag="--web-dir \"${WEB_DIR}\""
+  fi
+  if ! tmux new-session -d -s "${TMUX_SESSION}" "cd \"${ROOT}/host\" && exec go run ./cmd/rc-host serve --generate-dev-token --log-dir \"${ROOT}/logs\" --bind \"${BIND}\" --port \"${PORT}\" ${web_flag}"; then
     log "tmux start failed (permission or environment). Falling back to nohup."
     return 1
   fi
@@ -106,7 +117,11 @@ start_nohup() {
   rm -f "${LOG_FILE}" 2>/dev/null || true
   (
     cd "${ROOT}/host"
-    nohup go run ./cmd/rc-host serve --generate-dev-token --log-dir "${ROOT}/logs" >> "${LOG_FILE}" 2>&1 &
+    args=(go run ./cmd/rc-host serve --generate-dev-token --log-dir "${ROOT}/logs" --bind "${BIND}" --port "${PORT}")
+    if [[ -n "${WEB_DIR}" ]]; then
+      args+=(--web-dir "${WEB_DIR}")
+    fi
+    nohup "${args[@]}" >> "${LOG_FILE}" 2>&1 &
     echo "$!" > "${PID_FILE}"
   )
   wait_ready_or_dump_logs

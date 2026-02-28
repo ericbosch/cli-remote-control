@@ -224,6 +224,11 @@ write_summary() {
     host_listen="PASS"
   fi
 
+  local host_bind_mode="localhost"
+  if ss -lnt 2>/dev/null | rg -q '0\.0\.0\.0:8787\b|:::8787\b|\\[::\\]:8787\\b'; then
+    host_bind_mode="lan"
+  fi
+
   local unauth_ok="FAIL"
   if [[ "${unauth_code}" == "401" || "${unauth_code}" == "403" ]]; then
     unauth_ok="PASS"
@@ -303,6 +308,7 @@ PY
     echo "${go}"
     echo
     printf 'host_listening_localhost=%s\n' "${host_listen}"
+    printf 'host_bind_mode=%s\n' "${host_bind_mode}"
     printf 'unauth_sessions_401_403=%s (http=%s)\n' "${unauth_ok}" "${unauth_code}"
     printf 'auth_sessions_200=%s (http=%s)\n' "${auth_ok}" "${auth_code}"
     printf 'healthz_200=%s (http=%s)\n' "${healthz_ok}" "${healthz_code}"
@@ -488,6 +494,15 @@ main() {
   # Host observations
   host_pid_info
   capture_cmd "ss_listeners.txt" ss -lntp
+
+  # Remote access signals (best-effort)
+  if command -v tailscale >/dev/null 2>&1; then
+    capture_cmd "tailscale_version.txt" tailscale --version
+    capture_cmd "tailscale_serve_status.txt" tailscale serve status
+  else
+    echo "tailscale: not found" > "${CMD_DIR}/tailscale_version.txt"
+    echo "tailscale: not found" > "${CMD_DIR}/tailscale_serve_status.txt"
+  fi
 
   echo -n "$(safe_http_code "${BASE_URL}/api/sessions")" > "${CMD_DIR}/curl_unauth_sessions.http"
   echo -n "$(safe_http_code "${BASE_URL}/healthz")" > "${CMD_DIR}/curl_healthz.http"

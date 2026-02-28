@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟢 Green — Phase 6 complete (browser WS tickets, UI reconnect/replay, phone port-forward workflow)
+**Banner:** 🟡 Yellow — Remote access (Tailscale scripts) in progress; core UI + ws-ticket are green
 
-**Current milestone:** Closeout — keep gates green
+**Current milestone:** Phase 1 — Tailscale-first remote access
 
 ## Checklist
 

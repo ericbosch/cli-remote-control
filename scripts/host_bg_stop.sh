@@ -10,7 +10,9 @@ RUN_DIR="${ROOT}/host/.run"
 PID_FILE="${RUN_DIR}/rc-host.pid"
 LOG_FILE="${RUN_DIR}/rc-host.log"
 TMUX_SESSION="rc-host"
-BASE_URL="http://127.0.0.1:8787"
+BIND="${RC_HOST_BIND:-127.0.0.1}"
+PORT="${RC_HOST_PORT:-8787}"
+BASE_URL="http://127.0.0.1:${PORT}"
 
 log() { printf '%s %s\n' "$(date -Is)" "$*" >&2; }
 
@@ -57,7 +59,7 @@ fi
 if wait_down; then
   log "host is stopped"
 else
-  log "host still appears up (healthz=200) after stop attempt"
+  log "host still appears up (healthz=200) after stop attempt (bind=${BIND} port=${PORT})"
   if [[ -f "${LOG_FILE}" ]]; then
     log "last nohup log lines: ${LOG_FILE}"
     tail -n 50 "${LOG_FILE}" || true
