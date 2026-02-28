@@ -1,8 +1,8 @@
 # Status
 
-**Banner:** 🟡 Yellow — Phase 1 complete (Tailscale Serve); Phase 2 optional LAN exposure added (requires sudo/ufw)
+**Banner:** 🟢 Green — Remote access ready (Tailscale Serve + optional LAN); all gates green
 
-**Current milestone:** Closeout — keep gates green
+**Current milestone:** Ready — try from phone via Tailscale
 
 ## Checklist
 
