@@ -88,19 +88,23 @@ func newCursorNDJSONSession(ctx context.Context, id, name string, args map[strin
 
 	workspacePath, _ := args["workspacePath"].(string)
 
-	bin := "cursor"
-	cmdArgs := []string{"agent", "--print", "--output-format", "stream-json", "--stream-partial-output", prompt}
-	if _, err := exec.LookPath(bin); err != nil {
-		bin = "agent"
-		cmdArgs = []string{"--print", "--output-format", "stream-json", "--stream-partial-output", prompt}
-		if _, err := exec.LookPath(bin); err != nil {
-			lf.Close()
-			cancel()
-			return nil, errors.New("cursor agent binary not found")
-		}
+	ep, err := detectCursorEngineEntrypoint(ctx)
+	if err != nil {
+		lf.Close()
+		cancel()
+		return nil, err
+	}
+	if !ep.SupportsStructuredStreaming {
+		lf.Close()
+		cancel()
+		return nil, errors.New("cursor engine structured streaming unsupported")
 	}
 
-	cmd := exec.CommandContext(ctx, bin, cmdArgs...)
+	cmdArgs := []string{}
+	cmdArgs = append(cmdArgs, ep.ArgsPrefix...)
+	cmdArgs = append(cmdArgs, "--print", "--output-format", "stream-json", "--stream-partial-output", prompt)
+
+	cmd := exec.CommandContext(ctx, ep.Bin, cmdArgs...)
 	if workspacePath != "" {
 		cmd.Dir = workspacePath
 	}
@@ -124,6 +128,10 @@ func newCursorNDJSONSession(ctx context.Context, id, name string, args map[strin
 		lf.Close()
 		cancel()
 		return nil, err
+	}
+	s.engineMeta = map[string]any{
+		"cursor_engine_entrypoint": ep.Name,
+		"cursor_engine_mode":       "structured",
 	}
 
 	_, _ = s.PublishEvent(events.EventKindStatus, map[string]any{"state": "running"})

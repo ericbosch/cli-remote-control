@@ -433,13 +433,45 @@ write_summary_and_reports() {
   if command -v codex >/dev/null 2>&1; then
     codex_present="PASS"
   fi
-  local cursor_present="SKIP"
-  if command -v cursor >/dev/null 2>&1; then
-    cursor_present="PASS"
+
+  local cursor_cmd_present="SKIP"
+  if command -v cursor >/dev/null 2>&1; then cursor_cmd_present="PASS"; fi
+  local cursor_agent_bin_present="SKIP"
+  if command -v cursor-agent >/dev/null 2>&1; then cursor_agent_bin_present="PASS"; fi
+  local agent_bin_present="SKIP"
+  if command -v agent >/dev/null 2>&1; then agent_bin_present="PASS"; fi
+
+  local cursor_ide_installed="SKIP"
+  if [[ "${cursor_cmd_present}" == "PASS" ]]; then
+    if [[ -f "${CMD_DIR}/cursor_version.txt" ]] && rg -q '^exit=0$' "${CMD_DIR}/cursor_version.txt"; then
+      if rg -qi 'no cursor ide installation found|cursor ide.*not.*found|no installation found' "${CMD_DIR}/cursor_version.txt"; then
+        cursor_ide_installed="FAIL"
+      else
+        cursor_ide_installed="PASS"
+      fi
+    else
+      cursor_ide_installed="FAIL"
+    fi
   fi
-  local agent_present="SKIP"
-  if command -v agent >/dev/null 2>&1; then
-    agent_present="PASS"
+
+  local agent_streaming_capable="SKIP"
+  if [[ "${agent_bin_present}" == "PASS" ]] && [[ -f "${CMD_DIR}/agent_help_head.txt" ]]; then
+    if rg -qi 'output-format|stream-json' "${CMD_DIR}/agent_help_head.txt"; then
+      agent_streaming_capable="PASS"
+    else
+      agent_streaming_capable="FAIL"
+    fi
+  fi
+
+  local cursor_engine_entrypoint="none"
+  if [[ "${cursor_agent_bin_present}" == "PASS" ]]; then
+    cursor_engine_entrypoint="cursor-agent"
+  elif [[ "${agent_bin_present}" == "PASS" ]]; then
+    cursor_engine_entrypoint="agent"
+  elif [[ "${cursor_ide_installed}" == "PASS" ]]; then
+    if [[ -f "${CMD_DIR}/cursor_agent_subcommand_help_head.txt" ]] && rg -q '^exit=0$' "${CMD_DIR}/cursor_agent_subcommand_help_head.txt"; then
+      cursor_engine_entrypoint="cursor agent"
+    fi
   fi
 
   local redaction_status
@@ -486,8 +518,12 @@ write_summary_and_reports() {
     printf 'phase7_android_detected=%s\n' "${phase7_android_detected}"
     printf 'sessions_list_len=%s\n' "${sessions_list_len}"
     printf 'codex_present=%s\n' "${codex_present}"
-    printf 'cursor_present=%s\n' "${cursor_present}"
-    printf 'agent_present=%s\n' "${agent_present}"
+    printf 'cursor_cmd_present=%s\n' "${cursor_cmd_present}"
+    printf 'cursor_ide_installed=%s\n' "${cursor_ide_installed}"
+    printf 'agent_bin_present=%s\n' "${agent_bin_present}"
+    printf 'cursor_agent_bin_present=%s\n' "${cursor_agent_bin_present}"
+    printf 'agent_streaming_capable=%s\n' "${agent_streaming_capable}"
+    printf 'cursor_engine_entrypoint=%s\n' "${cursor_engine_entrypoint}"
     printf 'redaction_selfcheck=%s\n' "${redaction_status}"
     printf 'git_worktree_clean=%s\n' "${git_worktree_clean}"
     if [[ "${git_worktree_clean}" == "FAIL" ]]; then
@@ -521,7 +557,8 @@ write_summary_and_reports() {
     echo "- phase6_web_ui_detected: ${phase6_web_ui_detected}"
     echo "- phase7_android_detected: ${phase7_android_detected}"
     echo "- sessions_list_len: ${sessions_list_len}"
-    echo "- engines_present: codex=${codex_present} cursor=${cursor_present} agent=${agent_present}"
+    echo "- cursor_engine_entrypoint: ${cursor_engine_entrypoint}"
+    echo "- engines: codex=${codex_present}, cursor_cmd=${cursor_cmd_present}, cursor_ide=${cursor_ide_installed}, agent=${agent_bin_present}, cursor-agent=${cursor_agent_bin_present}"
     echo
     echo "## What was verified (checklist)"
     echo
@@ -569,7 +606,8 @@ write_summary_and_reports() {
     echo "- phase6_web_ui_detected=${phase6_web_ui_detected}"
     echo "- phase7_android_detected=${phase7_android_detected}"
     echo "- sessions_list_len=${sessions_list_len}"
-    echo "- engines_present: codex=${codex_present}, cursor=${cursor_present}, agent=${agent_present}"
+    echo "- cursor_engine_entrypoint=${cursor_engine_entrypoint}"
+    echo "- engines: codex=${codex_present}, cursor_cmd=${cursor_cmd_present}, cursor_ide=${cursor_ide_installed}, agent=${agent_bin_present}, cursor-agent=${cursor_agent_bin_present}"
     echo
     echo "## Notes"
     echo
@@ -612,10 +650,17 @@ main() {
   capture_shell "android_presence.txt" "if [[ -f android/gradlew || -x android/gradlew ]]; then echo 'android_gradlew=true'; else echo 'android_gradlew=false'; fi; if [[ -d android/app/src ]]; then echo 'android_app_src=true'; else echo 'android_app_src=false'; fi"
 
   # Engines (versions/help only; clear PAYG-style keys for subprocesses)
+  capture_shell "which_cursor.txt" "command -v cursor || true"
+  capture_shell "which_agent.txt" "command -v agent || true"
+  capture_shell "which_cursor_agent.txt" "command -v cursor-agent || true"
+
   capture_shell "codex_version.txt" "if command -v codex >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY codex --version; else echo 'codex: not found'; fi"
   capture_shell "codex_app_server_help.txt" "if command -v codex >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY codex app-server --help | head -n 120; else echo 'codex: not found'; fi"
+
   capture_shell "cursor_version.txt" "if command -v cursor >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY cursor --version; else echo 'cursor: not found'; fi"
-  capture_shell "agent_help.txt" "if command -v agent >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY agent --help | head -n 120; else echo 'agent: not found'; fi"
+  capture_shell "cursor_agent_subcommand_help_head.txt" "if command -v cursor >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY cursor agent --help | head -n 120; else echo 'cursor: not found'; fi"
+  capture_shell "agent_help_head.txt" "if command -v agent >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY agent --help | head -n 120; else echo 'agent: not found'; fi"
+  capture_shell "cursor_agent_help_head.txt" "if command -v cursor-agent >/dev/null 2>&1; then env -u OPENAI_API_KEY -u CURSOR_API_KEY cursor-agent --help | head -n 120; else echo 'cursor-agent: not found'; fi"
 
   # Code pointers
   write_code_pointers

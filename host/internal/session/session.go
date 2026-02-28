@@ -31,6 +31,7 @@ type Session struct {
 	mu          sync.RWMutex
 	state       string // "running", "exited"
 	exitCode    int
+	engineMeta  map[string]any
 	ptmx        *os.File
 	cmd         *exec.Cmd
 	logFile     *os.File
@@ -161,21 +162,20 @@ func newCursorPTYSession(ctx context.Context, id, name string, args map[string]i
 	workspacePath, _ := args["workspacePath"].(string)
 	prompt, _ := args["prompt"].(string)
 
-	// Prefer "cursor agent" (official CLI entrypoint); fall back to bare "agent" if needed.
-	cursorBin := "cursor"
-	if _, err := exec.LookPath(cursorBin); err != nil {
-		cursorBin = "agent"
+	ep, err := detectCursorEngineEntrypoint(ctx)
+	if err != nil {
+		lf.Close()
+		cancel()
+		return nil, err
 	}
 
 	cmdArgs := []string{}
-	if cursorBin == "cursor" {
-		cmdArgs = append(cmdArgs, "agent")
-	}
-	if prompt != "" {
+	cmdArgs = append(cmdArgs, ep.ArgsPrefix...)
+	if prompt != "" && ep.SupportsPromptFlag {
 		cmdArgs = append(cmdArgs, "-p", prompt)
 	}
 
-	cmd := exec.CommandContext(ctx, cursorBin, cmdArgs...)
+	cmd := exec.CommandContext(ctx, ep.Bin, cmdArgs...)
 	if workspacePath != "" {
 		cmd.Dir = workspacePath
 	}
@@ -187,10 +187,14 @@ func newCursorPTYSession(ctx context.Context, id, name string, args map[string]i
 		lf.Close()
 		cancel()
 		// Wrap error to signal cursor unavailability; caller will fall back.
-		return nil, errors.New("failed to start cursor agent; ensure Cursor IDE is installed and logged in")
+		return nil, errors.New("failed to start cursor engine")
 	}
 	s.ptmx = ptmx
 	s.cmd = cmd
+	s.engineMeta = map[string]any{
+		"cursor_engine_entrypoint": ep.Name,
+		"cursor_engine_mode":       "pty",
+	}
 
 	go s.copyOutput(lf)
 	_, _ = s.PublishEvent(events.EventKindStatus, map[string]any{"state": "running"})
@@ -413,8 +417,9 @@ func (s *Session) Terminate() error {
 func (s *Session) Info() map[string]interface{} {
 	s.mu.RLock()
 	state, code := s.state, s.exitCode
+	meta := s.engineMeta
 	s.mu.RUnlock()
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"id":        s.ID,
 		"name":      s.Name,
 		"engine":    s.Engine,
@@ -423,6 +428,10 @@ func (s *Session) Info() map[string]interface{} {
 		"last_seq":  s.LastEventSeq(),
 		"created":   s.Created.Format(time.RFC3339),
 	}
+	if meta != nil && len(meta) > 0 {
+		out["engine_meta"] = meta
+	}
+	return out
 }
 
 // MarshalJSON for Session.Info().
