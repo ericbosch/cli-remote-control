@@ -338,6 +338,11 @@ write_summary_and_reports() {
   healthz_code="$(cat "${CMD_DIR}/curl_healthz.http" 2>/dev/null || echo "000")"
   ws_ticket_code="$(cat "${CMD_DIR}/ws_ticket.http" 2>/dev/null || echo "000")"
 
+  local healthz_ok="FAIL"
+  if [[ "${healthz_code}" == "200" ]]; then
+    healthz_ok="PASS"
+  fi
+
   local host_listen="FAIL"
   local host_bind_mode="unknown"
   # Primary signal: if /healthz responds 200, the host is reachable on localhost.
@@ -362,11 +367,6 @@ write_summary_and_reports() {
     auth_ok="PASS"
   fi
 
-  local healthz_ok="FAIL"
-  if [[ "${healthz_code}" == "200" ]]; then
-    healthz_ok="PASS"
-  fi
-
   local ws_auth_mode="bearer_header"
   local ws_ticket_ok="FAIL"
   if [[ "${ws_ticket_code}" == "200" ]]; then
@@ -388,8 +388,8 @@ write_summary_and_reports() {
   local ui_root_http="000"
   local ui_root_ct=""
   if [[ -f "${CMD_DIR}/ui_root_headers.txt" ]]; then
-    ui_root_http="$(rg -n '^HTTP/' "${CMD_DIR}/ui_root_headers.txt" | head -n 1 | awk '{print $2}' || echo "000")"
-    ui_root_ct="$(rg -ni '^content-type:' "${CMD_DIR}/ui_root_headers.txt" | head -n 1 | cut -d: -f2- | tr -d '\r' | xargs || true)"
+    ui_root_http="$(rg '^HTTP/' "${CMD_DIR}/ui_root_headers.txt" | head -n 1 | awk '{print $2}' || echo "000")"
+    ui_root_ct="$(rg -i '^content-type:' "${CMD_DIR}/ui_root_headers.txt" | head -n 1 | cut -d: -f2- | tr -d '\r' | xargs || true)"
   fi
   if [[ "${ui_root_http}" == "200" ]] && echo "${ui_root_ct}" | rg -qi '^text/html\b'; then
     ui_root_status="PASS"
