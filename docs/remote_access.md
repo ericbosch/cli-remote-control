@@ -19,6 +19,11 @@ This keeps the host bound to localhost on your computer and exposes it safely ov
 - From repo root: `./scripts/expose_tailscale.sh`
 - It configures: `https://<your-device>.<tailnet>.ts.net` → `http://127.0.0.1:8787`
 
+If you're running the always-on systemd service, use the “live” helper scripts (does not rebuild/start host):
+
+- Enable: `./scripts/live_expose_tailscale.sh`
+- Disable: `./scripts/live_unexpose_tailscale.sh`
+
 3) Open the printed `serve_url` on your phone (while connected to Tailscale).
 
 4) Disable Serve when done:

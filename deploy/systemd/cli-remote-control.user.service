@@ -1,0 +1,16 @@
+[Unit]
+Description=cli-remote-control (rc-host) - localhost-only + web UI (user service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/krinekk/dev/cli-remote-control/host
+ExecStart=/home/krinekk/dev/cli-remote-control/host/.run/rc-host serve --generate-dev-token --bind 127.0.0.1 --port 8787 --web-dir /home/krinekk/dev/cli-remote-control/web/dist --token-file /home/krinekk/dev/cli-remote-control/host/.dev-token --log-dir /home/krinekk/dev/cli-remote-control/host/.run/logs
+Restart=always
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=default.target
+

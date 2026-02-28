@@ -1,0 +1,32 @@
+[Unit]
+Description=cli-remote-control (rc-host) - localhost-only + web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=krinekk
+WorkingDirectory=/home/krinekk/dev/cli-remote-control/host
+ExecStart=/home/krinekk/dev/cli-remote-control/host/.run/rc-host serve --generate-dev-token --bind 127.0.0.1 --port 8787 --web-dir /home/krinekk/dev/cli-remote-control/web/dist --token-file /home/krinekk/dev/cli-remote-control/host/.dev-token --log-dir /home/krinekk/dev/cli-remote-control/host/.run/logs
+Restart=always
+RestartSec=2
+UMask=0077
+
+# Hardening (best-effort; keep access to /home paths needed by ExecStart)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+# Allow writes only where needed
+ReadWritePaths=/home/krinekk/dev/cli-remote-control/host/.run /home/krinekk/dev/cli-remote-control/host/.dev-token
+
+[Install]
+WantedBy=multi-user.target
+
