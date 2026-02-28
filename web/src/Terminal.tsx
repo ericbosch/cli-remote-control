@@ -214,7 +214,7 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
       cursorBlink: true,
       theme: { background: '#1a1a2e', foreground: '#eee' },
       fontSize: 14,
-      disableStdin: true,
+      disableStdin: false,
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -222,6 +222,7 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
     fit.fit()
     xtermRef.current = term
     fitRef.current = fit
+    const disposeInput = term.onData((data) => sendInput(data))
 
     const onResize = () => fit.fit()
     window.addEventListener('resize', onResize)
@@ -233,6 +234,7 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
       window.removeEventListener('resize', onResize)
       wsRef.current?.close()
       wsRef.current = null
+      disposeInput.dispose()
       term.dispose()
       xtermRef.current = null
       fitRef.current = null

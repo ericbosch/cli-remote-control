@@ -102,9 +102,17 @@ func newShellSession(ctx context.Context, id, name, engine, logDir string, event
 		return nil, err
 	}
 	s.logFile = lf
-	cmd := exec.CommandContext(ctx, "bash")
+	// Start an interactive shell with a predictable prompt and without user dotfiles.
+	// This improves UX (prompt visible) and reduces surprise from local config.
+	cmd := exec.CommandContext(ctx, "bash", "--noprofile", "--norc", "-i")
 	env, _ := policy.EngineEnv(os.Environ())
-	cmd.Env = append(env, "TERM=xterm-256color")
+	cmd.Env = append(env,
+		"TERM=xterm-256color",
+		"PS1=rc$ ",
+		"HISTFILE=/dev/null",
+		"HISTSIZE=0",
+		"HISTFILESIZE=0",
+	)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		lf.Close()
