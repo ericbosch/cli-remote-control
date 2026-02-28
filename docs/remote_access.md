@@ -26,6 +26,10 @@ If you're running the always-on systemd service, use the “live” helper scrip
 
 3) Open the printed `serve_url` on your phone (while connected to Tailscale).
 
+Shared HTTPS:443 note:
+
+- If another app already owns `https:443` on this node, `live_expose_tailscale.sh` will add rc-host under `/rc` (path mapping) instead of replacing `/`.
+
 4) Disable Serve when done:
 
 - `./scripts/unexpose_tailscale.sh`
@@ -34,6 +38,7 @@ Notes:
 
 - The UI will prompt for the Bearer token; read it from `host/.dev-token` on the computer (do not paste it into issues/logs).
 - Diagnostics v5 never prints raw tokens; only path + byte length + sha256(file).
+- Warning: do not run `tailscale serve reset` unless you intend to wipe all Serve config on this device.
 
 ## SSH port-forward (fallback)
 

@@ -203,6 +203,7 @@ tailscale_status_best_effort() {
   if ! command -v tailscale >/dev/null 2>&1; then
     echo "tailscale: not found" > "${CMD_DIR}/tailscale_version.txt"
     echo "tailscale: not found" > "${CMD_DIR}/tailscale_serve_status.txt"
+    echo "{}" > "${CMD_DIR}/tailscale_serve_status.json"
     return 0
   fi
 
@@ -215,6 +216,14 @@ tailscale_status_best_effort() {
   else
     # Preserve whatever output we got for debugging.
     :
+  fi
+
+  if tailscale serve status -json > "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null; then
+    :
+  elif command -v sudo >/dev/null 2>&1 && sudo -n tailscale serve status -json > "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null; then
+    :
+  else
+    echo "{}" > "${CMD_DIR}/tailscale_serve_status.json"
   fi
 
   redact_stream < "${CMD_DIR}/tailscale_serve_status.txt" > "${CMD_DIR}/tailscale_serve_status.txt.redacted" 2>/dev/null || true
@@ -413,12 +422,33 @@ write_summary_and_reports() {
       if rg -qi 'no serve config|not configured|serve is not enabled|serve: not configured' "${CMD_DIR}/tailscale_serve_status.txt"; then
         tailscale_serve_configured="SKIP"
       else
-        # PASS only when it looks like Serve is actually proxying to a local backend.
-        if rg -qi 'http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?' "${CMD_DIR}/tailscale_serve_status.txt"; then
-          tailscale_serve_configured="PASS"
-        else
-          tailscale_serve_configured="SKIP"
-        fi
+        tailscale_serve_configured="PASS"
+      fi
+    fi
+  fi
+
+  local serve_rc_mapping_present="SKIP"
+  local serve_rc_mapping_mode="SKIP"
+  local serve_rc_mapping_https_port="SKIP"
+  local serve_rc_mapping_path="SKIP"
+  local state_file="${ROOT}/host/.run/serve-mode.json"
+  if [[ -f "${state_file}" && -f "${CMD_DIR}/tailscale_serve_status.json" ]]; then
+    serve_rc_mapping_mode="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("mode","SKIP"))' "${state_file}" 2>/dev/null || echo "SKIP")"
+    serve_rc_mapping_https_port="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("httpsPort","SKIP"))' "${state_file}" 2>/dev/null || echo "SKIP")"
+    serve_rc_mapping_path="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("path",""))' "${state_file}" 2>/dev/null || true)"
+    if [[ "${serve_rc_mapping_mode}" == "path" && -n "${serve_rc_mapping_path}" ]]; then
+      if python3 -c 'import json,sys; path=sys.argv[1]; fp=sys.argv[2]; obj=json.load(open(fp,"r",encoding="utf-8")); handlers={}; [handlers.update((site.get("Handlers") or {})) for site in (obj.get("Web") or {}).values()]; h=handlers.get(path); ok=isinstance(h,dict) and h.get("Proxy")=="http://127.0.0.1:8787"; sys.exit(0 if ok else 1)' "${serve_rc_mapping_path}" "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null
+      then
+        serve_rc_mapping_present="PASS"
+      else
+        serve_rc_mapping_present="FAIL"
+      fi
+    elif [[ "${serve_rc_mapping_mode}" == "port" && "${serve_rc_mapping_https_port}" != "SKIP" ]]; then
+      if python3 -c 'import json,sys; port=str(sys.argv[1]); fp=sys.argv[2]; obj=json.load(open(fp,"r",encoding="utf-8")); tcp=obj.get("TCP") or {}; web=obj.get("Web") or {}; tcp_ok = (port in tcp); handlers={}; [handlers.update((site.get("Handlers") or {})) for k,site in web.items() if k.endswith(":"+port)]; h=handlers.get("/"); web_ok=isinstance(h,dict) and h.get("Proxy")=="http://127.0.0.1:8787"; sys.exit(0 if (tcp_ok and web_ok) else 1)' "${serve_rc_mapping_https_port}" "${CMD_DIR}/tailscale_serve_status.json" 2>/dev/null
+      then
+        serve_rc_mapping_present="PASS"
+      else
+        serve_rc_mapping_present="FAIL"
       fi
     fi
   fi
@@ -569,6 +599,12 @@ write_summary_and_reports() {
     printf 'web_dist_present=%s\n' "${web_dist_present}"
     printf 'tailscale_present=%s\n' "${tailscale_present}"
     printf 'tailscale_serve_configured=%s\n' "${tailscale_serve_configured}"
+    printf 'serve_rc_mapping_present=%s\n' "${serve_rc_mapping_present}"
+    printf 'serve_rc_mapping_mode=%s\n' "${serve_rc_mapping_mode}"
+    printf 'serve_rc_mapping_https_port=%s\n' "${serve_rc_mapping_https_port}"
+    if [[ -n "${serve_rc_mapping_path}" ]]; then
+      printf 'serve_rc_mapping_path=%s\n' "${serve_rc_mapping_path}"
+    fi
     printf 'systemd_present=%s\n' "${systemd_present}"
     printf 'systemd_service_active=%s\n' "${systemd_service_active}"
     printf 'systemd_service_enabled=%s\n' "${systemd_service_enabled}"

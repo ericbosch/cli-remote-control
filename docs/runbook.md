@@ -73,6 +73,12 @@ Prereq: host service must be healthy at `http://127.0.0.1:8787/healthz`.
 Verify:
 - `tailscale serve status`
 
+Shared HTTPS:443 note:
+
+- If another app (e.g. OpenClaw) already owns `https:443` on this node, **do not** replace `/`.
+- This repo exposes rc-host under a dedicated path (default: `/rc`) on the existing `https:443` Serve config.
+- Do **not** run `tailscale serve reset` unless you intentionally want to wipe *all* Serve config on this device.
+
 ## Rotate token safely (no token printing)
 
 1) Stop service:
@@ -107,4 +113,3 @@ Verify:
 ## Repo hygiene
 
 - `./scripts/cleanup_local_artifacts.sh` is safe-by-default and does **not** delete `host/.run` unless `--host-run` is provided.
-
