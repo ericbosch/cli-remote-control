@@ -2,7 +2,7 @@
 
 ## Diagnostics
 
-- Generate an audit bundle: `./scripts/collect_diag_bundle_v5.sh`
+- Generate an audit bundle: `./scripts/collect_diag_bundle_v6.sh`
   - Output: `diag_YYYYMMDD_HHMMSS/` and `diag_YYYYMMDD_HHMMSS.zip` in repo root.
   - Start with `diag_.../SUMMARY.txt` for GO/NO-GO and PASS/FAIL/SKIP.
 - Safe auth debug (does not print the token):

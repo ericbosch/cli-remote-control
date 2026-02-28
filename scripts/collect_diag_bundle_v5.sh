@@ -9,6 +9,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+if [[ -x "${ROOT}/scripts/collect_diag_bundle_v6.sh" ]]; then
+  echo "DEPRECATED: scripts/collect_diag_bundle_v5.sh; use ./scripts/collect_diag_bundle_v6.sh" >&2
+  exec "${ROOT}/scripts/collect_diag_bundle_v6.sh" "$@"
+fi
+
 TS="$(date +%Y%m%d_%H%M%S)"
 OUT_DIR="diag_${TS}"
 ZIP_PATH="${OUT_DIR}.zip"

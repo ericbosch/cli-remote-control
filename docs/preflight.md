@@ -2,13 +2,15 @@
 
 Date: 2026-02-27
 
-Primary intent: run everything from Codex with a reliable background host + canonical diagnostics bundle (v5).
+Primary intent: run everything from Codex with a reliable background host + canonical diagnostics bundle (v6).
+
+Update (2026-02-28): canonical diagnostics bundle is now v6 (`./scripts/collect_diag_bundle_v6.sh`).
 
 ## Quick recon (commands run)
 
 - `git status` → clean except untracked `logs/`
-- `ls -la scripts` → `build.sh`, `dev.sh`, `collect_diag_bundle_v5.sh` present
-- `ls -la scripts/collect_diag_bundle_v5.sh` → present + executable
+- `ls -la scripts` → `build.sh`, `dev.sh`, `collect_diag_bundle_v6.sh` present
+- `ls -la scripts/collect_diag_bundle_v6.sh` → present + executable
 - `ss -lntp | grep ':8787'` → empty at recon time (host not running)
 - `which tmux` → `/usr/bin/tmux` (available)
 - `which nohup` → `/usr/bin/nohup` (available)

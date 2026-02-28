@@ -25,7 +25,7 @@ LAN exposure is intentionally **optional** and should be considered a local-netw
 
 ### Diagnostics bundle (canonical)
 
-- Generate: `./scripts/collect_diag_bundle_v5.sh` (current)
+- Generate: `./scripts/collect_diag_bundle_v6.sh` (canonical)
 
 If multiple `collect_diag_bundle_v*.sh` versions exist, only the newest is canonical; older versions are deprecated and may be removed.
 
@@ -34,4 +34,3 @@ If multiple `collect_diag_bundle_v*.sh` versions exist, only the newest is canon
 - `./scripts/dev.sh` is a convenience wrapper (not the canonical host entrypoint). Prefer:
   - `./scripts/host_bg_start.sh`
   - then `cd web && npm run dev`
-
