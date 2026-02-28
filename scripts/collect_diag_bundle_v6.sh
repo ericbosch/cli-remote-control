@@ -340,18 +340,15 @@ write_summary_and_reports() {
 
   local host_listen="FAIL"
   local host_bind_mode="unknown"
+  # Primary signal: if /healthz responds 200, the host is reachable on localhost.
+  if [[ "${healthz_ok}" == "PASS" ]]; then
+    host_listen="PASS"
+    host_bind_mode="localhost"
+  fi
+  # Secondary signals (best-effort): listener inspection for bind mode.
   if command -v ss >/dev/null 2>&1; then
-    if ss -lnt 2>/dev/null | rg -q "127\\.0\\.0\\.1:${PORT}\\b"; then
-      host_listen="PASS"
-      host_bind_mode="localhost"
-    fi
     if ss -lnt 2>/dev/null | rg -q "0\\.0\\.0\\.0:${PORT}\\b|:::${PORT}\\b|\\[::\\]:${PORT}\\b"; then
       host_bind_mode="lan"
-    fi
-  elif command -v lsof >/dev/null 2>&1; then
-    if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null | rg -q "127\\.0\\.0\\.1:${PORT}\\b"; then
-      host_listen="PASS"
-      host_bind_mode="localhost"
     fi
   fi
 
