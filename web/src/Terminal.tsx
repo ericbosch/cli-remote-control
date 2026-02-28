@@ -261,7 +261,9 @@ export default function Terminal({ sessionId, session, onStatusChange }: Termina
   useEffect(() => {
     const term = xtermRef.current
     if (!term) return
-    term.setOption('disableStdin', !rawMode)
+    // xterm v5 uses the `options` bag (no `setOption` method).
+    // Keep the terminal read-only by default; raw mode explicitly enables stdin.
+    ;(term.options as any).disableStdin = !rawMode
     rawDisposeRef.current?.dispose()
     rawDisposeRef.current = null
     if (rawMode) {
