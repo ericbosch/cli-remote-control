@@ -160,20 +160,18 @@ export default function App() {
         <div className="rc-status">
           <span className={`status-dot ${connStatus}`} />
           <span className="rc-status-text">{attachedId ? connStatus : 'idle'}</span>
-          {attachedSession && (
-            <span className="rc-badge">
-              {attachedSession.engine} · {attachedSession.state}
-            </span>
-          )}
+          {attachedSession && <span className="rc-badge">{attachedSession.engine + ' · ' + attachedSession.state}</span>}
         </div>
-        {attachedId && (
-          <button type="button" className="settings-btn" onClick={() => setAttachedId(null)}>
-            Detach
+        <div className="rc-actions">
+          {attachedId && (
+            <button type="button" className="settings-btn" onClick={() => setAttachedId(null)}>
+              Detach
+            </button>
+          )}
+          <button type="button" className="settings-btn" onClick={() => setShowSettings(true)}>
+            Settings
           </button>
-        )}
-        <button type="button" className="settings-btn" onClick={() => setShowSettings(true)}>
-          Settings
-        </button>
+        </div>
       </header>
 
       {error && <div className="error">{error}</div>}

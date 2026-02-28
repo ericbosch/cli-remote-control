@@ -20,6 +20,8 @@
   position: sticky;
   top: 0;
   z-index: 5;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .rc-brand {
@@ -43,13 +45,15 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-width: 200px;
+  min-width: 0;
   justify-content: center;
+  flex: 1;
 }
 
 .rc-status-text {
   font-size: 0.85rem;
   color: #c8d0dd;
+  white-space: nowrap;
 }
 
 .rc-badge {
@@ -61,6 +65,14 @@
   color: #e7e9ee;
 }
 
+.rc-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+}
+
 .settings-btn {
   background: #333;
   color: #eee;
@@ -68,6 +80,7 @@
   padding: 0.35rem 0.75rem;
   border-radius: 4px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .error {
@@ -525,5 +538,26 @@
     width: auto;
     border-right: none;
     border-bottom: 1px solid #222;
+  }
+}
+
+@media (max-width: 520px) {
+  .rc-topbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .rc-brand {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .rc-subtitle {
+    display: none;
+  }
+  .rc-status {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+  .rc-actions {
+    margin-left: auto;
   }
 }
