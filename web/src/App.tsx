@@ -7,6 +7,7 @@ import {
   setToken,
   getBaseUrl,
   setBaseUrl,
+  clearBaseUrl,
   type SessionInfo,
 } from './api'
 import Terminal from './Terminal'
@@ -94,6 +95,11 @@ export default function App() {
   }
 
   if (showSettings) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const baseLooksLoopback = /^https?:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\]|::1)(:|\\/|$)/i.test(baseUrl.trim())
+    const originLooksLoopback = /^https?:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\]|::1)(:|\\/|$)/i.test(origin)
+    const likelyWrongOnPhone = origin && !originLooksLoopback && baseLooksLoopback
+    const likelyMixedContent = origin.startsWith('https://') && baseUrl.trim().startsWith('http://') && origin !== baseUrl.trim()
     return (
       <div className="app">
         <div className="settings-panel">
@@ -107,6 +113,23 @@ export default function App() {
               placeholder="http://127.0.0.1:8787"
             />
           </label>
+          {(likelyWrongOnPhone || likelyMixedContent) && (
+            <div className="error" style={{ marginTop: 8 }}>
+              This page is loaded from <code>{origin}</code>, but the Base URL is <code>{baseUrl || '(empty)'}</code>. That often
+              causes “Failed to fetch” (phone/Tailscale: <code>127.0.0.1</code> points to the phone, and HTTPS pages can’t fetch HTTP).
+              <div style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBaseUrlState(origin)
+                    clearBaseUrl()
+                  }}
+                >
+                  Use page origin
+                </button>
+              </div>
+            </div>
+          )}
           <label>
             Auth token
             <input
