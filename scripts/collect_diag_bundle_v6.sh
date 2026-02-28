@@ -516,6 +516,27 @@ write_summary_and_reports() {
     fi
   fi
 
+  local e2e_ws_connect="SKIP"
+  local e2e_input_roundtrip="SKIP"
+  local e2e_output_marker="SKIP"
+  local e2e_exit_rc="SKIP"
+  if [[ -f "${CMD_DIR}/e2e_smoke_ws.txt" ]]; then
+    e2e_ws_connect="$(rg -n '^e2e_ws_connect=' "${CMD_DIR}/e2e_smoke_ws.txt" | head -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    e2e_input_roundtrip="$(rg -n '^e2e_input_roundtrip=' "${CMD_DIR}/e2e_smoke_ws.txt" | head -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    e2e_output_marker="$(rg -n '^e2e_output_marker=' "${CMD_DIR}/e2e_smoke_ws.txt" | head -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    e2e_exit_rc="$(rg -n '^exit=' "${CMD_DIR}/e2e_smoke_ws.txt" | tail -n 1 | cut -d= -f2- | tr -d '\r' || echo "SKIP")"
+    if [[ -z "${e2e_ws_connect}" ]]; then e2e_ws_connect="SKIP"; fi
+    if [[ -z "${e2e_input_roundtrip}" ]]; then e2e_input_roundtrip="SKIP"; fi
+    if [[ -z "${e2e_output_marker}" ]]; then e2e_output_marker="SKIP"; fi
+    if [[ -z "${e2e_exit_rc}" ]]; then e2e_exit_rc="SKIP"; fi
+    # If the script ran and failed, ensure we surface FAIL even if individual lines are missing.
+    if [[ "${e2e_exit_rc}" != "SKIP" && "${e2e_exit_rc}" != "0" ]]; then
+      if [[ "${e2e_ws_connect}" == "SKIP" ]]; then e2e_ws_connect="FAIL"; fi
+      if [[ "${e2e_input_roundtrip}" == "SKIP" ]]; then e2e_input_roundtrip="FAIL"; fi
+      if [[ "${e2e_output_marker}" == "SKIP" ]]; then e2e_output_marker="FAIL"; fi
+    fi
+  fi
+
   local phase6_web_ui_detected="FAIL"
   if [[ "${ui_root_status}" == "PASS" || "${web_dist_present}" == "PASS" || -d "${ROOT}/web" ]]; then
     phase6_web_ui_detected="PASS"
@@ -575,8 +596,20 @@ write_summary_and_reports() {
   fi
 
   local go="NO-GO"
+  local e2e_required="false"
+  if [[ -f "${TOKEN_FILE}" && "${host_listen}" == "PASS" ]]; then
+    e2e_required="true"
+  fi
+  local e2e_gate_ok="PASS"
+  if [[ "${e2e_required}" == "true" ]]; then
+    if [[ "${e2e_ws_connect}" != "PASS" || "${e2e_input_roundtrip}" != "PASS" || "${e2e_output_marker}" != "PASS" ]]; then
+      e2e_gate_ok="FAIL"
+    fi
+  fi
   if [[ "${host_listen}" == "PASS" && "${unauth_ok}" == "PASS" && "${auth_ok}" == "PASS" && "${healthz_ok}" == "PASS" && "${ws_ticket_ok}" == "PASS" && "${redaction_status}" == "PASS" && "${git_worktree_clean}" == "PASS" ]]; then
-    if [[ "${systemd_present}" == "PASS" ]]; then
+    if [[ "${e2e_gate_ok}" != "PASS" ]]; then
+      go="NO-GO"
+    elif [[ "${systemd_present}" == "PASS" ]]; then
       if [[ "${systemd_service_active}" == "PASS" && "${systemd_service_enabled}" == "PASS" ]]; then
         go="GO"
       fi
@@ -616,6 +649,9 @@ write_summary_and_reports() {
     printf 'phase6_web_ui_detected=%s\n' "${phase6_web_ui_detected}"
     printf 'phase7_android_detected=%s\n' "${phase7_android_detected}"
     printf 'sessions_list_len=%s\n' "${sessions_list_len}"
+    printf 'e2e_ws_connect=%s\n' "${e2e_ws_connect}"
+    printf 'e2e_input_roundtrip=%s\n' "${e2e_input_roundtrip}"
+    printf 'e2e_output_marker=%s\n' "${e2e_output_marker}"
     printf 'codex_present=%s\n' "${codex_present}"
     printf 'cursor_cmd_present=%s\n' "${cursor_cmd_present}"
     printf 'cursor_ide_installed=%s\n' "${cursor_ide_installed}"
@@ -658,6 +694,9 @@ write_summary_and_reports() {
     echo "- phase6_web_ui_detected: ${phase6_web_ui_detected}"
     echo "- phase7_android_detected: ${phase7_android_detected}"
     echo "- sessions_list_len: ${sessions_list_len}"
+    echo "- e2e_ws_connect: ${e2e_ws_connect}"
+    echo "- e2e_input_roundtrip: ${e2e_input_roundtrip}"
+    echo "- e2e_output_marker: ${e2e_output_marker}"
     echo "- cursor_engine_entrypoint: ${cursor_engine_entrypoint}"
     echo "- engines: codex=${codex_present}, cursor_cmd=${cursor_cmd_present}, cursor_ide=${cursor_ide_installed}, agent=${agent_bin_present}, cursor-agent=${cursor_agent_bin_present}"
     echo
@@ -667,6 +706,7 @@ write_summary_and_reports() {
     echo "- REST auth behavior: /api/sessions (unauth + auth JSON shape only)"
     echo "- Health endpoint: /healthz"
     echo "- WS ticket endpoint: /api/ws-ticket (JSON shape only)"
+    echo "- E2E WS+input+output marker: cmd/e2e_smoke_ws.txt (no secrets)"
     echo "- UI root: GET / (status + content-type only)"
     echo "- Tailscale Serve (best-effort): cmd/tailscale_serve_status.txt"
     echo "- systemd service: cmd/systemctl_*.txt and cmd/journal_*.txt (best-effort)"
@@ -708,6 +748,9 @@ write_summary_and_reports() {
     echo "- phase6_web_ui_detected=${phase6_web_ui_detected}"
     echo "- phase7_android_detected=${phase7_android_detected}"
     echo "- sessions_list_len=${sessions_list_len}"
+    echo "- e2e_ws_connect=${e2e_ws_connect}"
+    echo "- e2e_input_roundtrip=${e2e_input_roundtrip}"
+    echo "- e2e_output_marker=${e2e_output_marker}"
     echo "- cursor_engine_entrypoint=${cursor_engine_entrypoint}"
     echo "- engines: codex=${codex_present}, cursor_cmd=${cursor_cmd_present}, cursor_ide=${cursor_ide_installed}, agent=${agent_bin_present}, cursor-agent=${cursor_agent_bin_present}"
     echo
@@ -742,6 +785,13 @@ main() {
 
   auth_request_keys_only "GET" "${BASE_URL}/api/sessions" "${CMD_DIR}/curl_auth_sessions.http" "${CMD_DIR}/curl_auth_sessions.keys"
   auth_request_keys_only "POST" "${BASE_URL}/api/ws-ticket" "${CMD_DIR}/ws_ticket.http" "${CMD_DIR}/ws_ticket.keys"
+
+  # E2E WS+input smoke (best-effort; never prints token/ticket)
+  if [[ -x "${ROOT}/scripts/e2e_smoke_ws.sh" ]]; then
+    capture_shell "e2e_smoke_ws.txt" "RC_BASE_URL='${BASE_URL}' RC_TOKEN_FILE='${TOKEN_FILE}' ${ROOT}/scripts/e2e_smoke_ws.sh"
+  else
+    echo "e2e=SKIP (missing scripts/e2e_smoke_ws.sh)" > "${CMD_DIR}/e2e_smoke_ws.txt"
+  fi
 
   detect_ui_root_headers
 
