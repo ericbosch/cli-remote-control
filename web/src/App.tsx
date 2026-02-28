@@ -36,6 +36,9 @@ export default function App() {
   // Default to shell for responsiveness (cursor engines may require separate auth/login).
   const [engine, setEngine] = useState<'shell' | 'codex' | 'cursor'>('shell')
   const [name, setName] = useState('')
+  const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'closed'>('closed')
+
+  const attachedSession = attachedId ? sessions.find((s) => s.id === attachedId) || null : null
 
   const loadSessions = useCallback(async () => {
     if (!getToken()) return
@@ -148,29 +151,43 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>CLI Remote Control</h1>
+    <div className="rc-shell">
+      <header className="rc-topbar">
+        <div className="rc-brand">
+          <div className="rc-title">Remote Control</div>
+          <div className="rc-subtitle">localhost-only host · tailnet UI</div>
+        </div>
+        <div className="rc-status">
+          <span className={`status-dot ${connStatus}`} />
+          <span className="rc-status-text">{attachedId ? connStatus : 'idle'}</span>
+          {attachedSession && (
+            <span className="rc-badge">
+              {attachedSession.engine} · {attachedSession.state}
+            </span>
+          )}
+        </div>
+        {attachedId && (
+          <button type="button" className="settings-btn" onClick={() => setAttachedId(null)}>
+            Detach
+          </button>
+        )}
         <button type="button" className="settings-btn" onClick={() => setShowSettings(true)}>
           Settings
         </button>
       </header>
+
       {error && <div className="error">{error}</div>}
-      {attachedId ? (
-        <Terminal
-          sessionId={attachedId}
-          session={sessions.find((s) => s.id === attachedId) || null}
-          onClose={() => setAttachedId(null)}
-        />
-      ) : (
-        <div className="sessions-panel">
-          <div className="sessions-header">
+
+      <div className="rc-body">
+        <aside className="rc-sidebar">
+          <div className="rc-sidebar-header">
             <h2>Sessions</h2>
             <button type="button" onClick={handleCreate} disabled={loading}>
-              New session
+              New
             </button>
           </div>
-          <div className="cursor-create">
+
+          <div className="rc-create">
             <label>
               Engine
               <select value={engine} onChange={(e) => setEngine(e.target.value as 'shell' | 'codex' | 'cursor')}>
@@ -180,16 +197,11 @@ export default function App() {
               </select>
             </label>
             <label>
-              Session name (optional)
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. auth-hardening"
-              />
+              Name
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="optional" />
             </label>
             <label>
-              Workspace path
+              Workspace
               <input
                 type="text"
                 value={workspacePath}
@@ -198,51 +210,73 @@ export default function App() {
               />
             </label>
             <label>
-              Initial prompt (optional)
-              <input
-                type="text"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g. set up tests for auth module"
-              />
+              Prompt
+              <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="optional" />
             </label>
             {engine === 'cursor' && (
               <label>
                 Mode
                 <select value={mode} onChange={(e) => setMode(e.target.value as 'structured' | 'pty')}>
-                  <option value="pty">PTY (terminal)</option>
-                  <option value="structured">Structured (experimental)</option>
+                  <option value="pty">PTY</option>
+                  <option value="structured">Structured</option>
                 </select>
               </label>
             )}
           </div>
-          {loading && sessions.length === 0 ? (
-            <p>Loading…</p>
+
+          <div className="rc-session-list">
+            {loading && sessions.length === 0 ? (
+              <div className="rc-empty">Loading…</div>
+            ) : sessions.length === 0 ? (
+              <div className="rc-empty">No sessions yet. Create one.</div>
+            ) : (
+              <ul className="session-list">
+                {sessions.map((s) => (
+                  <li key={s.id} className={attachedId === s.id ? 'active' : ''}>
+                    <button type="button" className="rc-session-row" onClick={() => setAttachedId(s.id)}>
+                      <span className={`rc-dot ${s.state}`} />
+                      <span className="session-name">{s.name || s.id}</span>
+                      <span className="session-engine">{s.engine}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => handleTerminate(s.id)}
+                      disabled={s.state === 'exited'}
+                      title="Terminate session"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </aside>
+
+        <main className="rc-main">
+          {attachedId ? (
+            <Terminal
+              sessionId={attachedId}
+              session={attachedSession}
+              onStatusChange={setConnStatus}
+            />
           ) : (
-            <ul className="session-list">
-              {sessions.map((s) => (
-                <li key={s.id}>
-                  <span className="session-name">{s.name || s.id}</span>
-                  <span className="session-engine">{s.engine}</span>
-                  <span className="session-state">{s.state}</span>
-                  <span className="session-seq">seq {s.last_seq ?? 0}</span>
-                  <button type="button" onClick={() => setAttachedId(s.id)}>
-                    Attach
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => handleTerminate(s.id)}
-                    disabled={s.state === 'exited'}
-                  >
-                    Terminate
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="rc-hero">
+              <h2>Cloud Remote Control</h2>
+              <p>Create a session on the left, then attach to stream output and send commands.</p>
+              <div className="rc-hero-actions">
+                <button type="button" onClick={handleCreate} disabled={loading}>
+                  New session
+                </button>
+                <button type="button" className="settings-btn" onClick={() => setShowSettings(true)}>
+                  Settings
+                </button>
+              </div>
+            </div>
           )}
-        </div>
-      )}
+        </main>
+      </div>
     </div>
   )
 }

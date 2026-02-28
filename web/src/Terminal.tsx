@@ -10,7 +10,7 @@ const LAST_SEQ_KEY_PREFIX = 'rc-last-seq:'
 interface TerminalProps {
   sessionId: string
   session: SessionInfo | null
-  onClose?: () => void
+  onStatusChange?: (s: 'connecting' | 'connected' | 'reconnecting' | 'closed') => void
 }
 
 type SessionEvent = {
@@ -35,7 +35,7 @@ function formatTS(ms: number): string {
   }
 }
 
-export default function Terminal({ sessionId, session, onClose }: TerminalProps) {
+export default function Terminal({ sessionId, session, onStatusChange }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -58,6 +58,13 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
   const [toolCalls, setToolCalls] = useState<Array<{ ts: number; seq: number; payload: any }>>([])
   const [toolOutputs, setToolOutputs] = useState<Array<{ ts: number; seq: number; payload: any }>>([])
   const [inputText, setInputText] = useState('')
+  const [rawMode, setRawMode] = useState(false)
+  const rawDisposeRef = useRef<{ dispose: () => void } | null>(null)
+
+  useEffect(() => {
+    // Bubble status up to the shell (top bar).
+    onStatusChange?.(status)
+  }, [status, onStatusChange])
 
   const statusColor = useMemo(() => {
     if (status === 'connected') return 'green'
@@ -73,14 +80,25 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
     closedRef.current = status === 'closed'
   }, [status])
 
-  const sendInput = useCallback(
-    (text: string) => {
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      ws.send(JSON.stringify({ type: 'input', data: text }))
-    },
-    [wsRef],
-  )
+  const sendInput = useCallback((text: string) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'input', data: text }))
+  }, [])
+
+  const sendLine = useCallback(() => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const engine = session?.engine || ''
+    const trimmed = inputText.replace(/\r\n/g, '\n')
+    if (!trimmed.trim()) return
+
+    let payload = trimmed
+    // PTY-like engines expect newlines; codex prompts do not.
+    if (engine !== 'codex' && !payload.endsWith('\n')) payload += '\n'
+    sendInput(payload)
+    setInputText('')
+  }, [inputText, sendInput, session])
 
   const writeLine = useCallback((line: string) => {
     const term = xtermRef.current
@@ -129,12 +147,9 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
               if (txt) writeLine(txt)
               return
             }
-            case 'user': {
-              const payload = msg.payload || {}
-              const txt = safeText(payload.data)
-              if (txt) writeLine(`\r\n[you ${formatTS(msg.ts_ms)}] ${txt}\r\n`)
-              return
-            }
+            // Do not render user input optimistically into the terminal.
+            // For PTY shells the command will naturally echo in the output stream.
+            // Rendering "user" events here causes per-keystroke spam when raw mode is used.
             case 'thinking_delta': {
               const payload = msg.payload || {}
               const delta = safeText(payload.delta)
@@ -214,7 +229,7 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
       cursorBlink: true,
       theme: { background: '#1a1a2e', foreground: '#eee' },
       fontSize: 14,
-      disableStdin: false,
+      disableStdin: true, // read-only by default; input is handled by the composer below
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -222,7 +237,8 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
     fit.fit()
     xtermRef.current = term
     fitRef.current = fit
-    const disposeInput = term.onData((data) => sendInput(data))
+    // Raw mode toggles per-keystroke passthrough explicitly.
+    rawDisposeRef.current = null
 
     const onResize = () => fit.fit()
     window.addEventListener('resize', onResize)
@@ -234,31 +250,27 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
       window.removeEventListener('resize', onResize)
       wsRef.current?.close()
       wsRef.current = null
-      disposeInput.dispose()
+      rawDisposeRef.current?.dispose()
+      rawDisposeRef.current = null
       term.dispose()
       xtermRef.current = null
       fitRef.current = null
     }
   }, [sessionId, connect])
 
+  useEffect(() => {
+    const term = xtermRef.current
+    if (!term) return
+    term.setOption('disableStdin', !rawMode)
+    rawDisposeRef.current?.dispose()
+    rawDisposeRef.current = null
+    if (rawMode) {
+      rawDisposeRef.current = term.onData((data) => sendInput(data))
+    }
+  }, [rawMode, sendInput])
+
   return (
     <div className="terminal-container">
-      <div className="terminal-status">
-        <span className={`status-dot ${status}`} />
-        <span className={`status-banner ${statusColor}`}>{status}</span>
-        <span className="status-meta">
-          {session?.engine || 'unknown'} · {session?.state || 'unknown'} · seq {lastSeq}
-        </span>
-        <button type="button" className="small-btn" onClick={() => setThinkingOpen((v) => !v)}>
-          Thinking
-        </button>
-        {onClose && (
-          <button type="button" className="close-btn" onClick={onClose}>
-            Close
-          </button>
-        )}
-      </div>
-
       <div className="session-panels">
         <div className="panel terminal-panel">
           <div ref={containerRef} className="terminal" />
@@ -266,17 +278,26 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Send input (full line/message)…"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  sendLine()
+                }
+              }}
+              placeholder="Type a command/message…"
               rows={2}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="off"
+              inputMode="text"
+              enterKeyHint="send"
             />
             <div className="input-actions">
               <button
                 type="button"
                 onClick={() => {
-                  const txt = inputText.trimEnd()
-                  if (!txt) return
-                  sendInput(txt + '\n')
-                  setInputText('')
+                  sendLine()
                 }}
                 disabled={status !== 'connected'}
               >
@@ -285,7 +306,23 @@ export default function Terminal({ sessionId, session, onClose }: TerminalProps)
               <button type="button" onClick={() => sendInput('\u0003')} disabled={status !== 'connected'}>
                 Ctrl+C
               </button>
+              <button
+                type="button"
+                className={rawMode ? 'small-btn' : undefined}
+                onClick={() => setRawMode((v) => !v)}
+                disabled={status !== 'connected'}
+                title="Raw mode sends every keypress to the session. Off by default."
+              >
+                Raw: {rawMode ? 'ON' : 'OFF'}
+              </button>
             </div>
+          </div>
+          <div className="terminal-hint">
+            <span className={`status-dot ${status}`} />
+            <span className={`status-banner ${statusColor}`}>{status}</span>
+            <span className="status-meta">
+              {session?.engine || 'unknown'} · {session?.state || 'unknown'} · seq {lastSeq}
+            </span>
           </div>
         </div>
 
