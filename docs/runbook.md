@@ -99,6 +99,10 @@ Shared HTTPS:443 note:
 - UI not served at `/`:
   - Ensure `web/dist/` exists: `./scripts/prod_build_web.sh`
   - Ensure service ExecStart has `--web-dir .../web/dist` (see `deploy/systemd/`)
+- “Failed to fetch” when using phone/Tailscale:
+  - Ensure the UI Settings “Base URL” matches the page origin (e.g. `https://<device>.ts.net:8443`).
+  - An `https://...` page cannot fetch `http://...` URLs (mixed content).
+  - `http://127.0.0.1:8787` on a phone points to the phone, not the laptop.
 - 401 Unauthorized:
   - Phone UI/app token must match `host/.dev-token`
 - WS issues:

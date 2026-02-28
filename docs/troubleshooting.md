@@ -5,6 +5,9 @@
 - Generate an audit bundle: `./scripts/collect_diag_bundle_v6.sh`
   - Output: `diag_YYYYMMDD_HHMMSS/` and `diag_YYYYMMDD_HHMMSS.zip` in repo root.
   - Start with `diag_.../SUMMARY.txt` for GO/NO-GO and PASS/FAIL/SKIP.
+- Reproduce the realtime pipeline locally (WS ticket → WS connect → input → streamed output):
+  - `./scripts/e2e_smoke_ws.sh`
+  - Prints only safe metadata (token file fingerprint, HTTP status codes, session id).
 - Safe auth debug (does not print the token):
   - Unauth sessions should be `401`: `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/sessions`
   - Health should be `200`: `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/healthz`
@@ -27,18 +30,24 @@
 ## Web / Android: “Unauthorized” or 401
 
 - Ensure the **token** in Settings matches the host’s token (Bearer prefix optional).
-- Ensure **base URL** points to the host (e.g. `http://127.0.0.1:8787` for local, or your PC’s IP and port when using the phone).
+- Ensure **base URL** points to the host:
+  - Local laptop browser: `http://127.0.0.1:8787`
+  - Phone over Tailscale Serve (recommended): use the **same origin** you loaded the UI from (e.g. `https://<device>.ts.net:8443`)
+- If the UI loads but API calls show “Failed to fetch”, check for **mixed content**:
+  - An `https://...` page cannot fetch `http://...` URLs.
+  - If you open the UI on your phone and Base URL is `http://127.0.0.1:8787`, that points to the phone (wrong host) and will fail.
 
 ## Android: can’t connect to host
 
+- **Preferred (secure):** Use Tailscale Serve URL (HTTPS) and keep host bound to `127.0.0.1`.
 - **Emulator:** Use base URL `http://10.0.2.2:8787` (emulator’s alias to host’s loopback).
-- **Physical device:** Use your PC’s LAN IP (e.g. `http://192.168.1.100:8787`). Host must be started with `--bind=0.0.0.0`.
-- **Cleartext:** The app has `android:usesCleartextTraffic="true"` for HTTP. For HTTPS use a proper URL.
+- **LAN IP:** Only works if host is explicitly started with `--bind=0.0.0.0` (not the default).
 
 ## Terminal: no output or duplicate output
 
 - **Reconnect:** Closing and re-opening the terminal reattaches and sends a **replay** of the last 64 KB, then live output. If you see duplication, the client may be rendering both; the protocol sends `replay` once then `output` for new data.
 - **Session exited:** If the shell process exited, you’ll see “exited” and no new output; create a new session.
+  - If the UI renders but you still see no streaming, run `./scripts/e2e_smoke_ws.sh` to determine if the backend pipeline is healthy.
 
 ## Session list empty or stale
 
