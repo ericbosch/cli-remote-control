@@ -12,9 +12,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
 DEEP=false
-if [[ "${#}" -gt 0 ]]; then
+HOST_RUN=false
+while [[ "${#}" -gt 0 ]]; do
   case "${1:-}" in
     --deep) DEEP=true ;;
+    --host-run) HOST_RUN=true ;;
     -h|--help)
       cat <<'EOF'
 cleanup_local_artifacts.sh
@@ -24,7 +26,6 @@ Removes known local runtime/build artifacts.
 Default removes:
   - diag_* (directories)
   - diag_*.zip
-  - host/.run
   - host/*.log
 
 --deep also removes:
@@ -32,6 +33,9 @@ Default removes:
   - web/dist
   - android/.gradle
   - android/**/build
+
+Optional:
+  --host-run   also deletes host/.run (NOT recommended on always-on systems)
 EOF
       exit 0
       ;;
@@ -40,7 +44,8 @@ EOF
       exit 2
       ;;
   esac
-fi
+  shift
+done
 
 log() { printf '%s %s\n' "$(date -Is)" "$*" >&2; }
 
@@ -71,12 +76,14 @@ rm_glob_if_any() {
   [[ "${found}" -eq 1 ]]
 }
 
-log "cleanup: safe allowlist (deep=${DEEP})"
+log "cleanup: safe allowlist (deep=${DEEP} host_run=${HOST_RUN})"
 
 rm_glob_if_any "diag_*/" || true
 rm_glob_if_any "diag_*.zip" || true
-rm_if_exists "host/.run"
 rm_glob_if_any "host/"'*.log' || true
+if [[ "${HOST_RUN}" == "true" ]]; then
+  rm_if_exists "host/.run"
+fi
 
 if [[ "${DEEP}" == "true" ]]; then
   rm_if_exists "web/node_modules"
@@ -91,4 +98,3 @@ if [[ "${DEEP}" == "true" ]]; then
 fi
 
 log "done"
-
