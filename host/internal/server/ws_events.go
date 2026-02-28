@@ -3,8 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"time"
 
 	"github.com/ericbosch/cli-remote-control/host/internal/events"
 	"github.com/ericbosch/cli-remote-control/host/internal/session"
@@ -34,10 +37,13 @@ func (s *Server) handleWSEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	runSessionWSEvents(r.Context(), conn, sess, r.URL.Query().Get("from_seq"), r.URL.Query().Get("last_n"))
+	runSessionWSEvents(r.Context(), conn, sess, r.RemoteAddr, r.URL.Query().Get("from_seq"), r.URL.Query().Get("last_n"))
 }
 
-func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session.Session, fromSeqRaw string, lastNRaw string) {
+func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session.Session, remoteAddr string, fromSeqRaw string, lastNRaw string) {
+	debug := os.Getenv("RC_DEBUG_WS") == "1"
+	started := time.Now()
+
 	fromSeq := uint64(0)
 	if fromSeqRaw != "" {
 		if v, err := strconv.ParseUint(fromSeqRaw, 10, 64); err == nil {
@@ -77,6 +83,10 @@ func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session
 
 	_, _ = sess.PublishEvent(events.EventKindStatus, map[string]any{"state": "attached"})
 
+	if debug {
+		log.Printf("ws/events connected: session=%s remote=%s replay=%d from_seq=%s last_n=%d", sess.ID, remoteAddr, len(replay), fromSeqRaw, lastN)
+	}
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -91,8 +101,14 @@ func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session
 			}
 			switch c.Type {
 			case "input":
+				if debug {
+					log.Printf("ws/events input: session=%s bytes=%d", sess.ID, len(c.Data))
+				}
 				_ = sess.WriteInput([]byte(c.Data))
 			case "resize":
+				if debug {
+					log.Printf("ws/events resize: session=%s cols=%d rows=%d", sess.ID, c.Cols, c.Rows)
+				}
 				_ = sess.Resize(c.Cols, c.Rows)
 			case "ping":
 				_ = c.TS
@@ -100,16 +116,27 @@ func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session
 		}
 	}()
 
+	sent := 0
 	for {
 		select {
 		case <-ctx.Done():
+			if debug {
+				log.Printf("ws/events disconnected: session=%s remote=%s reason=ctx duration=%s sent=%d", sess.ID, remoteAddr, time.Since(started).Truncate(time.Millisecond), sent)
+			}
 			return
 		case <-done:
+			if debug {
+				log.Printf("ws/events disconnected: session=%s remote=%s reason=client duration=%s sent=%d", sess.ID, remoteAddr, time.Since(started).Truncate(time.Millisecond), sent)
+			}
 			return
 		case ev, ok := <-eventsCh:
 			if !ok {
+				if debug {
+					log.Printf("ws/events disconnected: session=%s remote=%s reason=session_closed duration=%s sent=%d", sess.ID, remoteAddr, time.Since(started).Truncate(time.Millisecond), sent)
+				}
 				return
 			}
+			sent++
 			_ = conn.WriteJSON(ev)
 		}
 	}
