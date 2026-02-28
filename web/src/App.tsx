@@ -96,8 +96,8 @@ export default function App() {
 
   if (showSettings) {
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    const baseLooksLoopback = /^https?:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\]|::1)(:|\\/|$)/i.test(baseUrl.trim())
-    const originLooksLoopback = /^https?:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\]|::1)(:|\\/|$)/i.test(origin)
+    const baseLooksLoopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|::1)(:|\/|$)/i.test(baseUrl.trim())
+    const originLooksLoopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|::1)(:|\/|$)/i.test(origin)
     const likelyWrongOnPhone = origin && !originLooksLoopback && baseLooksLoopback
     const likelyMixedContent = origin.startsWith('https://') && baseUrl.trim().startsWith('http://') && origin !== baseUrl.trim()
     return (
