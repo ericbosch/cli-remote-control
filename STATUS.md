@@ -1,8 +1,15 @@
 # Status
 
-**Banner:** 🟢 Green — Remote access ready (Tailscale Serve + optional LAN); all gates green
+**Banner:** 🟢 Green — Phase 6 (Web UI) detected; Phase 7 (Android scaffold) present; Cursor IDE not required (prefers `cursor-agent`/`agent`); all gates green
 
 **Current milestone:** Ready — try from phone via Tailscale
+
+## Snapshot (latest diag v6)
+
+- Phase 6 (Web UI) detected: yes
+- Phase 7 (Android scaffold) present: yes (build verification: SKIP)
+- Cursor IDE installed: no (expected on many machines; not required)
+- Cursor engine entrypoint (preferred): cursor-agent (fallback: agent, then `cursor agent` only if IDE installed)
 
 ## Checklist
 
