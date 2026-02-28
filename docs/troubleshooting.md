@@ -27,6 +27,14 @@
 - **“address already in use”** — Another process is using the port. Change port with `--port=8766` or stop the other process.
 - **Go not found** — Install Go (see [setup-linux.md](setup-linux.md)).
 
+## Codex engine: “HTTP 424” / “codex_unavailable”
+
+- The Codex engine uses the local `codex app-server` binary on the host.
+- If session creation returns a structured JSON error with `code=codex_unavailable`:
+  - Ensure `codex --version` works in your shell, or install Codex CLI.
+  - If Codex is installed but session creation still fails, run `codex` locally once to complete any required login/auth.
+- This project does **not** use `OPENAI_API_KEY` / `CURSOR_API_KEY` for core operation.
+
 ## Web / Android: “Unauthorized” or 401
 
 - Ensure the **token** in Settings matches the host’s token (Bearer prefix optional).
