@@ -8,30 +8,54 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import com.ericbosch.rcclient.api.RcApiClient
+import com.ericbosch.rcclient.di.Deps
+import com.ericbosch.rcclient.di.LocalDeps
+import com.ericbosch.rcclient.ui.screens.HomeScreen
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val deps = run {
+                val http = OkHttpClient.Builder().build()
+                val json = Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                }
+                Deps(http = http, json = json, api = RcApiClient(http, json))
+            }
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    val navController = rememberNavController()
-                    val start = if (Preferences.getToken().isNotEmpty()) "web" else "settings"
-                    NavHost(
-                        navController = navController,
-                        startDestination = start
-                    ) {
-                        composable("settings") {
-                            SettingsScreen(
-                                onSaved = { navController.navigate("web") { popUpTo(0) } }
-                            )
-                        }
-                        composable("web") {
-                            WebAppScreen(onOpenSettings = { navController.navigate("settings") })
+                    CompositionLocalProvider(LocalDeps provides deps) {
+                        val navController = rememberNavController()
+                        val start = if (Preferences.getToken().isNotEmpty()) "home" else "settings"
+                        val windowSize = calculateWindowSizeClass(this@MainActivity)
+                        NavHost(
+                            navController = navController,
+                            startDestination = start
+                        ) {
+                            composable("settings") {
+                                SettingsScreen(
+                                    onSaved = { navController.navigate("home") { popUpTo(0) } }
+                                )
+                            }
+                            composable("home") {
+                                HomeScreen(
+                                    windowSize = windowSize,
+                                    onOpenSettings = { navController.navigate("settings") }
+                                )
+                            }
                         }
                     }
                 }

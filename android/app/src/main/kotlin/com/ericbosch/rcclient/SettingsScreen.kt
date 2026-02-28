@@ -18,6 +18,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +45,11 @@ fun SettingsScreen(onSaved: () -> Unit) {
                 onValueChange = { baseUrl = it },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("http://192.168.1.100:8787") },
-                singleLine = true
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrect = false
+                )
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text("Auth token", modifier = Modifier.padding(bottom = 4.dp))
@@ -51,7 +58,12 @@ fun SettingsScreen(onSaved: () -> Unit) {
                 onValueChange = { token = it },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Bearer token") },
-                singleLine = true
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrect = false
+                )
             )
             Spacer(modifier = Modifier.height(24.dp))
             Button(
