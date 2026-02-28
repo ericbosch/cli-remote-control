@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,7 +46,11 @@ type Client struct {
 }
 
 func Start(ctx context.Context) (*Client, error) {
-	cmd := exec.CommandContext(ctx, "codex", "app-server", "--listen", "stdio://")
+	bin, err := findCodexBinary()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrCodexUnavailable, err)
+	}
+	cmd := exec.CommandContext(ctx, bin, "app-server", "--listen", "stdio://")
 	if env, _ := policy.EngineEnv(os.Environ()); len(env) > 0 {
 		cmd.Env = env
 	}
@@ -70,7 +75,7 @@ func Start(ctx context.Context) (*Client, error) {
 		pending: make(map[int64]chan Message),
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrCodexUnavailable, err)
 	}
 
 	go c.readLoop()
@@ -221,3 +226,31 @@ func (c *Client) drainStderr() {
 }
 
 var ErrCodexUnavailable = errors.New("codex app-server unavailable")
+
+func findCodexBinary() (string, error) {
+	if p, err := exec.LookPath("codex"); err == nil && p != "" {
+		return p, nil
+	}
+
+	home, _ := os.UserHomeDir()
+	candidates := []string{}
+	if home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".npm-global", "bin", "codex"),
+			filepath.Join(home, ".local", "bin", "codex"),
+		)
+	}
+	candidates = append(candidates, "/usr/local/bin/codex", "/usr/bin/codex", "/bin/codex")
+
+	for _, c := range candidates {
+		st, err := os.Stat(c)
+		if err != nil || st.IsDir() {
+			continue
+		}
+		if st.Mode()&0o111 == 0 {
+			continue
+		}
+		return c, nil
+	}
+	return "", errors.New("codex not found (PATH and common install locations)")
+}

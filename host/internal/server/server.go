@@ -3,12 +3,15 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ericbosch/cli-remote-control/host/internal/codexrpc"
 	"github.com/ericbosch/cli-remote-control/host/internal/session"
 )
 
@@ -149,16 +152,34 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Engine        string                 `json:"engine"`
 		Name          string                 `json:"name"`
 		WorkspacePath string                 `json:"workspacePath"`
+		Workspace     string                 `json:"workspace"` // backward-compatible alias
 		Prompt        string                 `json:"prompt"`
 		Mode          string                 `json:"mode"`
 		Args          map[string]interface{} `json:"args"`
 	}
 	if err := jsonDecode(r, &body); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body", "")
 		return
 	}
 	if body.Engine == "" {
 		body.Engine = "cursor"
+	}
+	if body.WorkspacePath == "" && body.Workspace != "" {
+		body.WorkspacePath = body.Workspace
+	}
+
+	if body.WorkspacePath != "" {
+		if st, err := os.Stat(body.WorkspacePath); err != nil || !st.IsDir() {
+			writeAPIError(w, http.StatusBadRequest, "invalid_workspace", "Workspace path does not exist or is not a directory", "Set Workspace to an existing directory, or leave it blank to use a safe default.")
+			return
+		}
+	}
+
+	// For engines that need a cwd, prefer a safe default when empty.
+	if body.Engine == "codex" && body.WorkspacePath == "" {
+		if cwd, err := os.Getwd(); err == nil && cwd != "" {
+			body.WorkspacePath = cwd
+		}
 	}
 
 	args := map[string]interface{}{}
@@ -177,8 +198,19 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := s.manager.Create(r.Context(), body.Engine, body.Name, args)
 	if err != nil {
+		// Codex errors should be actionable and never opaque 500s.
+		if body.Engine == "codex" {
+			code := "codex_failed"
+			hint := "Ensure the 'codex' CLI is installed and authenticated on the host (e.g. run `codex` locally to complete login). This service does not use OPENAI_API_KEY / PAYG keys."
+			if errors.Is(err, codexrpc.ErrCodexUnavailable) {
+				code = "codex_unavailable"
+				hint = "Install the 'codex' CLI on the host and ensure it is on PATH. This service does not use OPENAI_API_KEY / PAYG keys."
+			}
+			writeAPIError(w, http.StatusFailedDependency, code, "Codex session creation failed", err.Error()+"\n"+hint)
+			return
+		}
 		log.Printf("create session: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "Internal error", "")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
