@@ -37,7 +37,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/ws/events/", s.wsAuthMiddleware(http.HandlerFunc(s.handleWSEvents)))
 	s.mux.Handle("/ws/", s.wsAuthMiddleware(http.HandlerFunc(s.handleWS)))
 	if s.cfg.WebDir != "" {
-		s.mux.Handle("/", http.FileServer(http.Dir(s.cfg.WebDir)))
+		s.mux.Handle("/", spaFileServer(s.cfg.WebDir))
 	} else {
 		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/" {
