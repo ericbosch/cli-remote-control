@@ -15,8 +15,9 @@ export function getBaseUrl(): string {
   if (typeof window !== 'undefined') {
     try {
       const u = new URL(window.location.origin)
-      // Common dev setup: UI on :5173 but host API on :8787.
-      if (u.port && u.port !== '8787') {
+      // Common dev setup: Vite UI on :5173 (or preview on :4173) but host API on :8787.
+      // Do not rewrite for production/tailnet ports (e.g. :8443 behind Tailscale Serve).
+      if (u.port === '5173' || u.port === '4173') {
         u.port = '8787'
         return u.toString().replace(/\/$/, '')
       }
