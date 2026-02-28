@@ -115,7 +115,9 @@ auth_request_keys_only() {
   # Usage: auth_request_keys_only <method> <url> <http_out> <keys_out>
   # Records only:
   # - HTTP status
-  # - top-level JSON keys (no values)
+  # - JSON shape summary (no values):
+  #   - dict: one key per line
+  #   - list: list_len=N
   local method="$1"
   local url="$2"
   local http_out="$3"
@@ -151,11 +153,13 @@ try:
 except Exception as e:
   print(f"SKIP (non-json body: {type(e).__name__})")
   raise SystemExit(0)
-if isinstance(obj, dict):
-  for k in sorted(obj.keys()):
-    print(k)
-else:
-  print(f"SKIP (json type={type(obj).__name__})")
+	if isinstance(obj, dict):
+	  for k in sorted(obj.keys()):
+	    print(k)
+	elif isinstance(obj, list):
+	  print(f"list_len={len(obj)}")
+	else:
+	  print(f"SKIP (json type={type(obj).__name__})")
 PY
   then
     :
@@ -441,7 +445,31 @@ write_summary_and_reports() {
   local redaction_status
   redaction_status="$(cat "${CMD_DIR}/redaction_selfcheck.status" 2>/dev/null || echo "SKIP")"
 
+  local sessions_list_len="SKIP"
+  if [[ -f "${CMD_DIR}/curl_auth_sessions.keys" ]]; then
+    v="$(rg -o 'list_len=[0-9]+' "${CMD_DIR}/curl_auth_sessions.keys" | head -n 1 || true)"
+    if [[ -n "${v}" ]]; then
+      sessions_list_len="${v#list_len=}"
+    fi
+  fi
+
+  local phase6_web_ui_detected="FAIL"
+  if [[ "${ui_root_status}" == "PASS" || "${web_dist_present}" == "PASS" || -d "${ROOT}/web" ]]; then
+    phase6_web_ui_detected="PASS"
+  fi
+  local phase7_android_detected="FAIL"
+  if [[ "${android_scaffold_present}" == "PASS" ]]; then
+    phase7_android_detected="PASS"
+  fi
+
+  local go="NO-GO"
+  if [[ "${host_listen}" == "PASS" && "${unauth_ok}" == "PASS" && "${auth_ok}" == "PASS" && "${healthz_ok}" == "PASS" && "${ws_ticket_ok}" == "PASS" && "${redaction_status}" == "PASS" && "${git_worktree_clean}" == "PASS" ]]; then
+    go="GO"
+  fi
+
   {
+    echo "${go}"
+    echo
     printf 'host_listening_localhost=%s\n' "${host_listen}"
     printf 'host_bind_mode=%s\n' "${host_bind_mode}"
     printf 'unauth_sessions_401_403=%s (http=%s)\n' "${unauth_ok}" "${unauth_code}"
@@ -454,6 +482,9 @@ write_summary_and_reports() {
     printf 'tailscale_present=%s\n' "${tailscale_present}"
     printf 'tailscale_serve_configured=%s\n' "${tailscale_serve_configured}"
     printf 'android_scaffold_present=%s\n' "${android_scaffold_present}"
+    printf 'phase6_web_ui_detected=%s\n' "${phase6_web_ui_detected}"
+    printf 'phase7_android_detected=%s\n' "${phase7_android_detected}"
+    printf 'sessions_list_len=%s\n' "${sessions_list_len}"
     printf 'codex_present=%s\n' "${codex_present}"
     printf 'cursor_present=%s\n' "${cursor_present}"
     printf 'agent_present=%s\n' "${agent_present}"
@@ -487,24 +518,27 @@ write_summary_and_reports() {
     echo "- ui_root_served: ${ui_root_status}"
     echo "- tailscale_serve_configured: ${tailscale_serve_configured}"
     echo "- android_scaffold_present: ${android_scaffold_present}"
+    echo "- phase6_web_ui_detected: ${phase6_web_ui_detected}"
+    echo "- phase7_android_detected: ${phase7_android_detected}"
+    echo "- sessions_list_len: ${sessions_list_len}"
     echo "- engines_present: codex=${codex_present} cursor=${cursor_present} agent=${agent_present}"
     echo
     echo "## What was verified (checklist)"
     echo
     echo "- Host bind/listen checks: cmd/ss_listeners.txt (best-effort)"
-    echo "- REST auth behavior: /api/sessions (unauth + auth keys-only)"
+    echo "- REST auth behavior: /api/sessions (unauth + auth JSON shape only)"
     echo "- Health endpoint: /healthz"
-    echo "- WS ticket endpoint: /api/ws-ticket (keys-only)"
+    echo "- WS ticket endpoint: /api/ws-ticket (JSON shape only)"
     echo "- UI root: GET / (status + content-type only)"
     echo "- Tailscale Serve (best-effort): cmd/tailscale_serve_status.txt"
-    echo "- Android scaffold presence: filesystem checks only"
+    echo "- Android scaffold presence: filesystem checks only (build verification: SKIP)"
     echo "- Engine presence: versions/help only (no PAYG APIs)"
     echo "- Redaction self-check: cmd/redaction_selfcheck.txt"
     echo
     echo "## Repo phases"
     echo
-    echo "This repo includes milestones (M1) and a v5-era staff summary that referenced phases up to Phase 5."
-    echo "**Phase 6/7 are not detected in this repo** (no code/docs markers found)."
+    echo "- Phase 6 (Web UI): ${phase6_web_ui_detected} (derived from ui_root_served/web_dist/web/ presence)"
+    echo "- Phase 7 (Android): ${phase7_android_detected} (derived from android scaffold presence)"
   } > "${OUT_DIR}/REPORT.md"
 
   # STAFF_SUMMARY.md: short exec summary
@@ -532,11 +566,13 @@ write_summary_and_reports() {
     echo "- ui_root_served=${ui_root_status} (http=${ui_root_http} content_type=${ui_root_ct:-unknown})"
     echo "- tailscale_serve_configured=${tailscale_serve_configured}"
     echo "- android_scaffold_present=${android_scaffold_present}"
+    echo "- phase6_web_ui_detected=${phase6_web_ui_detected}"
+    echo "- phase7_android_detected=${phase7_android_detected}"
+    echo "- sessions_list_len=${sessions_list_len}"
     echo "- engines_present: codex=${codex_present}, cursor=${cursor_present}, agent=${agent_present}"
     echo
     echo "## Notes"
     echo
-    echo "- Phase 6/7: not present (explicitly not detected)."
     echo "- Secrets: no raw tokens/tickets are recorded; token file is fingerprinted only."
   } > "${OUT_DIR}/STAFF_SUMMARY.md"
 }
