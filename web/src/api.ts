@@ -116,7 +116,21 @@ export async function createSession(body: CreateSessionBody): Promise<SessionInf
     headers: headers(),
     body: JSON.stringify(payload),
   })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  if (!r.ok) {
+    const text = await r.text().catch(() => '')
+    try {
+      const obj = JSON.parse(text) as any
+      const e = obj?.error
+      const msg = typeof e?.message === 'string' ? e.message : `HTTP ${r.status}`
+      const hint = typeof e?.hint === 'string' ? e.hint : ''
+      const rid = typeof e?.request_id === 'string' ? e.request_id : ''
+      const suffix = [hint && `Hint: ${hint}`, rid && `request_id=${rid}`].filter(Boolean).join(' · ')
+      throw new Error(suffix ? `${msg} (${r.status}) — ${suffix}` : `${msg} (${r.status})`)
+    } catch {
+      // ignore
+    }
+    throw new Error(text ? `HTTP ${r.status}: ${text.slice(0, 200)}` : `HTTP ${r.status}`)
+  }
   return r.json()
 }
 
