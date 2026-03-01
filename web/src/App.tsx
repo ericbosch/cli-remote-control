@@ -3,6 +3,7 @@ import {
   createSession,
   listSessions,
   terminateSession,
+  listEngines,
   getToken,
   setToken,
   getBaseUrl,
@@ -33,8 +34,8 @@ export default function App() {
   const [workspacePath, setWorkspacePath] = useState('')
   const [prompt, setPrompt] = useState('')
   const [mode, setMode] = useState<'structured' | 'pty'>('pty')
-  // Default to shell for responsiveness (cursor engines may require separate auth/login).
-  const [engine, setEngine] = useState<'shell' | 'codex' | 'cursor'>('shell')
+  const [engines, setEngines] = useState<string[]>(['shell'])
+  const [engine, setEngine] = useState<string>('shell')
   const [name, setName] = useState('')
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'closed'>('closed')
 
@@ -61,6 +62,29 @@ export default function App() {
     const t = setInterval(loadSessions, 5000)
     return () => clearInterval(t)
   }, [loadSessions])
+
+  useEffect(() => {
+    const t = getToken()
+    if (!t) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const list = await listEngines()
+        if (cancelled) return
+        const cleaned = list.map((v) => v.trim()).filter(Boolean)
+        const next = cleaned.length ? cleaned : ['shell']
+        setEngines(next)
+        setEngine((prev) => (next.includes(prev) ? prev : next[0] || 'shell'))
+      } catch {
+        if (cancelled) return
+        setEngines(['shell'])
+        setEngine('shell')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token, baseUrl])
 
   const handleCreate = async () => {
     setError(null)
@@ -188,10 +212,12 @@ export default function App() {
           <div className="rc-create">
             <label>
               Engine
-              <select value={engine} onChange={(e) => setEngine(e.target.value as 'shell' | 'codex' | 'cursor')}>
-                <option value="shell">shell</option>
-                <option value="codex">codex</option>
-                <option value="cursor">cursor</option>
+              <select value={engine} onChange={(e) => setEngine(e.target.value)}>
+                {engines.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
               </select>
             </label>
             <label>

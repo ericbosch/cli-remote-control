@@ -95,7 +95,7 @@ export async function listSessions(): Promise<SessionInfo[]> {
 }
 
 export interface CreateSessionBody {
-  engine: 'shell' | 'codex' | 'cursor'
+  engine: string
   workspacePath?: string
   prompt?: string
   mode?: 'structured' | 'pty'
@@ -151,6 +151,15 @@ export async function issueWSTicket(): Promise<string> {
   const obj = (await r.json()) as { ticket?: string }
   if (!obj || typeof obj.ticket !== 'string' || !obj.ticket) throw new Error('Missing ws ticket')
   return obj.ticket
+}
+
+export async function listEngines(): Promise<string[]> {
+  const r = await fetch(`${getBaseUrl()}/api/engines`, { headers: headers() })
+  if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)
+  const arr = (await r.json()) as unknown
+  if (!Array.isArray(arr)) throw new Error('Invalid engines response')
+  const cleaned = arr.map((v) => String(v).trim()).filter(Boolean)
+  return cleaned.length ? cleaned : ['shell']
 }
 
 export function wsEventsUrl(sessionId: string, ticket: string, params?: Record<string, string>): string {
