@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -114,6 +115,8 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
+	case path == "/api/engines" && r.Method == http.MethodGet:
+		s.listEngines(w, r)
 	case path == "/api/ws-ticket" && r.Method == http.MethodPost:
 		s.issueWSTicket(w, r)
 	case path == "/api/sessions" && r.Method == http.MethodGet:
@@ -134,6 +137,26 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		http.NotFound(w, r)
 	}
+}
+
+func (s *Server) listEngines(w http.ResponseWriter, _ *http.Request) {
+	// Shell is always available.
+	engines := []string{"shell"}
+
+	if _, err := exec.LookPath("codex"); err == nil {
+		engines = append(engines, "codex")
+	}
+	// Cursor support is best-effort; it may rely on cursor-agent/agent/cursor.
+	if _, err := exec.LookPath("cursor-agent"); err == nil {
+		engines = append(engines, "cursor")
+	} else if _, err := exec.LookPath("agent"); err == nil {
+		engines = append(engines, "cursor")
+	} else if _, err := exec.LookPath("cursor"); err == nil {
+		engines = append(engines, "cursor")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	jsonEncoder(w).Encode(engines)
 }
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
@@ -162,10 +185,18 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Engine == "" {
-		body.Engine = "cursor"
+		// Secure, reliable default: shell-first.
+		body.Engine = "shell"
 	}
 	if body.WorkspacePath == "" && body.Workspace != "" {
 		body.WorkspacePath = body.Workspace
+	}
+	switch body.Engine {
+	case "shell", "codex", "cursor":
+		// ok
+	default:
+		writeAPIError(w, http.StatusBadRequest, "invalid_engine", "Unknown engine", "Choose an engine from GET /api/engines (at minimum: shell).")
+		return
 	}
 
 	if body.WorkspacePath != "" {

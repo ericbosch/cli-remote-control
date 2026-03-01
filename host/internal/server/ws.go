@@ -39,6 +39,11 @@ type serverMsg struct {
 }
 
 func runSessionWS(ctx context.Context, conn *websocket.Conn, sess *session.Session) {
+	_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		return nil
+	})
 	// Send replay first
 	replay := sess.Replay(64 * 1024)
 	if len(replay) > 0 {

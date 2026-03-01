@@ -31,6 +31,12 @@ func (s *Server) handleWSEvents(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if os.Getenv("RC_DEBUG_WS") == "1" {
+		u := r.Header.Get("Upgrade")
+		c := r.Header.Get("Connection")
+		log.Printf("ws/events upgrade attempt: path=%s remote=%s has_upgrade=%t has_connection=%t upgrade=%q connection=%q",
+			r.URL.Path, r.RemoteAddr, u != "", c != "", u, c)
+	}
 	upgrader := websocketUpgrader()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -43,6 +49,13 @@ func (s *Server) handleWSEvents(w http.ResponseWriter, r *http.Request) {
 func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session.Session, remoteAddr string, fromSeqRaw string, lastNRaw string) {
 	debug := os.Getenv("RC_DEBUG_WS") == "1"
 	started := time.Now()
+	// Keepalive: proxies (including Serve) may drop idle WS connections.
+	// Use Ping/Pong to detect half-open connections and keep them warm.
+	_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		return nil
+	})
 
 	fromSeq := uint64(0)
 	if fromSeqRaw != "" {
@@ -87,6 +100,9 @@ func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session
 		log.Printf("ws/events connected: session=%s remote=%s replay=%d from_seq=%s last_n=%d", sess.ID, remoteAddr, len(replay), fromSeqRaw, lastN)
 	}
 
+	pingTicker := time.NewTicker(25 * time.Second)
+	defer pingTicker.Stop()
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -129,6 +145,8 @@ func runSessionWSEvents(ctx context.Context, conn *websocket.Conn, sess *session
 				log.Printf("ws/events disconnected: session=%s remote=%s reason=client duration=%s sent=%d", sess.ID, remoteAddr, time.Since(started).Truncate(time.Millisecond), sent)
 			}
 			return
+		case <-pingTicker.C:
+			_ = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(2*time.Second))
 		case ev, ok := <-eventsCh:
 			if !ok {
 				if debug {
