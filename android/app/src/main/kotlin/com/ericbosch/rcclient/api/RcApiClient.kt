@@ -3,6 +3,8 @@ package com.ericbosch.rcclient.api
 import com.ericbosch.rcclient.Preferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -56,6 +58,16 @@ class RcApiClient(
                 val obj = json.decodeFromString(WsTicketResponse.serializer(), body)
                 val ticket = obj.ticket?.trim().orEmpty()
                 if (ticket.isEmpty()) Result.failure(IllegalStateException("Missing ws ticket")) else Result.success(ticket)
+            }
+        }.getOrElse { Result.failure(it) }
+    }
+
+    suspend fun listEngines(): Result<List<String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/engines").get().build()
+            httpCall(req) { body ->
+                val list = json.decodeFromString(ListSerializer(String.serializer()), body)
+                Result.success(list)
             }
         }.getOrElse { Result.failure(it) }
     }
